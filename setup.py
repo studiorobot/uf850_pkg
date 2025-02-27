@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             'uf850_node = uf850_pkg.uf850_node:main',
+            'joy2uf850_node = uf850_pkg.joy2uf850_node:main',
         ],
     },
 )

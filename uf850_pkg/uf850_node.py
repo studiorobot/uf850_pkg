@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
-
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Joy, JointState
+from sensor_msgs.msg import JointState
+from geometry_msgs.msg import TwistStamped
 from std_msgs.msg import Header
-from rclpy.qos import QoSProfile
 import numpy as np
-from uf850_pkg.angle_conversion import euler_from_quaternion, get_quaternion_from_euler
 from xarm.wrapper import XArmAPI
-import time
 
 ##########################################################
 #################### Copyright 2025 ######################
@@ -56,7 +53,10 @@ class XArm(UF850):
 
         # Create a timer to periodically publish joint torques
         frequency = 50      # Hz
-        self.create_timer(1/frequency, self.send_joint_state)
+        self.create_timer(1/frequency, self.publish_joint_state)
+
+        # Create a subscriber for end effector velocity commands
+        self.vel_sub = self.create_subscription(TwistStamped, "/end_effector_vel_cmd", self.subscribe_vel_cmd, 10)
 
     def good_morning_robot(self):
         self.get_logger().info("I'm waking up...")
@@ -93,7 +93,7 @@ class XArm(UF850):
         self.get_logger().info("Shutting down robot...")
         self.arm.disconnect()
 
-    def send_joint_state(self):
+    def publish_joint_state(self):
         """
         Publishes the current joint state of the UF850 robot.
         """
@@ -116,7 +116,50 @@ class XArm(UF850):
         if failure:
             self.get_logger().error("Failed to get joint states from UF850.")
             return
+        
+    def publish_end_effector_pose(self):
+        """
+        Publishes the current end effector pose of the UF850 robot.
+        """
+        state_msg = JointState()
+        state_msg.header = Header()
+        state_msg.header.stamp = self.get_clock().now().to_msg()
+        state_msg.header.frame_id = "base_link"
+        state_msg.name = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
+    
+        # Get current joint state from the arm
+        failure, joint_states = self.arm.get_joint_states()
 
+        state_msg.position = joint_states[0]  # Joint positions (in degrees)
+        state_msg.velocity = joint_states[1]  # Joint velocities (degrees/s)
+        state_msg.effort = joint_states[2]  # Joint efforts (Nm ?)
+
+        # Publish the message
+        self.state_pub_.publish(state_msg)
+
+        if failure:
+            self.get_logger().error("Failed to get joint states from UF850.")
+            return
+
+    def subscribe_vel_cmd(self, msg: TwistStamped):
+        """
+        Subscribe and move arm with velocity commands
+        """
+        x, y, z = msg.twist.linear
+        rx, ry, rz = msg.twist.angular
+
+        self.get_logger().info("                 ")
+        self.get_logger().info("------------------------------")
+        self.get_logger().info(f"Linear x: {x}")
+        self.get_logger().info(f"Linear y: {y}")
+        self.get_logger().info(f"Linear z: {z}")
+        self.get_logger().info("------------------------------")
+        self.get_logger().info(f"Angular rx: {rx}")
+        self.get_logger().info(f"Angular ry: {ry}")
+        self.get_logger().info(f"Angular rz: {rz}")
+        self.get_logger().info("------------------------------")
+        # self.get_logger().info("                 ")
+        return
 
 def main(args=None):
     rclpy.init(args=args)
