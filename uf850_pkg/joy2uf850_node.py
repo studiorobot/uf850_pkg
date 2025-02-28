@@ -26,7 +26,6 @@ class Joy2UF850(Node):
 
         # Create a publisher for velocity commands
         self.vel_cmd_pub = self.create_publisher(TwistStamped, "/end_effector_vel_cmd", 10)
-
         frequency = 50      # Hz
         self.create_timer(1/frequency, self.send_vel_cmd)
 

@@ -121,25 +121,8 @@ class XArm(UF850):
         """
         Publishes the current end effector pose of the UF850 robot.
         """
-        state_msg = JointState()
-        state_msg.header = Header()
-        state_msg.header.stamp = self.get_clock().now().to_msg()
-        state_msg.header.frame_id = "base_link"
-        state_msg.name = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
-    
-        # Get current joint state from the arm
-        failure, joint_states = self.arm.get_joint_states()
-
-        state_msg.position = joint_states[0]  # Joint positions (in degrees)
-        state_msg.velocity = joint_states[1]  # Joint velocities (degrees/s)
-        state_msg.effort = joint_states[2]  # Joint efforts (Nm ?)
-
-        # Publish the message
-        self.state_pub_.publish(state_msg)
-
-        if failure:
-            self.get_logger().error("Failed to get joint states from UF850.")
-            return
+        
+        return
 
     def subscribe_vel_cmd(self, msg: TwistStamped):
         """
