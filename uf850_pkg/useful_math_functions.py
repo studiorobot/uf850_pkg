@@ -30,7 +30,7 @@ def get_quaternion_from_euler(roll, pitch, yaw):
 
     return [qx, qy, qz, qw]
 
-def euler_from_quaternion(x, y, z, w):
+def get_euler_from_quaternion(x, y, z, w):
     """
     Convert a quaternion into euler angles (roll, pitch, yaw)
     roll is rotation around x in radians (counterclockwise)

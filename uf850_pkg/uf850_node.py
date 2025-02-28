@@ -2,10 +2,12 @@
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import TwistStamped, PoseStamped
 from std_msgs.msg import Header
 import numpy as np
+import time
 from xarm.wrapper import XArmAPI
+from uf850_pkg.useful_math_functions import get_euler_from_quaternion, get_quaternion_from_euler
 
 ##########################################################
 #################### Copyright 2025 ######################
@@ -49,11 +51,12 @@ class XArm(UF850):
         self.good_morning_robot()
 
         # Create a publisher for joint torques
-        self.state_pub_ = self.create_publisher(JointState, '/uf850_joint_states', 10)
-
+        self.joint_state_pub = self.create_publisher(JointState, '/uf850_joint_states', 10)
+        # Create a publisher for end effector pose
+        self.eef_pose_pub = self.create_publisher(PoseStamped, '/eef_pose', 10)
         # Create a timer to periodically publish joint torques
         frequency = 50      # Hz
-        self.create_timer(1/frequency, self.publish_joint_state)
+        self.create_timer(1/frequency, self.publish_robot_state)
 
         # Create a subscriber for end effector velocity commands
         self.vel_sub = self.create_subscription(TwistStamped, "/end_effector_vel_cmd", self.subscribe_vel_cmd, 10)
@@ -65,7 +68,7 @@ class XArm(UF850):
         
         self.arm.set_mode(0)
         self.arm.set_state(state=0)
-        self.arm.reset(wait=True)
+        time.sleep(1)
 
         # Going to Home Position
         self.arm.set_position(*[180.0, 0.0, 500.0, 180, 0, 0], wait=True)
@@ -79,6 +82,11 @@ class XArm(UF850):
             self.get_logger().error("Failed to get current pose from xArm.")
             return
 
+        # set cartesian velocity control mode
+        self.get_logger().info("Switching mode!")
+        self.arm.set_mode(5)
+        self.arm.set_state(0)
+        time.sleep(1)
 
         self.get_logger().info("I'm ready to go!")
 
@@ -93,25 +101,29 @@ class XArm(UF850):
         self.get_logger().info("Shutting down robot...")
         self.arm.disconnect()
 
+    def publish_robot_state(self):
+        self.publish_joint_state()
+        self.publish_end_effector_pose()
+    
     def publish_joint_state(self):
         """
         Publishes the current joint state of the UF850 robot.
         """
-        state_msg = JointState()
-        state_msg.header = Header()
-        state_msg.header.stamp = self.get_clock().now().to_msg()
-        state_msg.header.frame_id = "base_link"
-        state_msg.name = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
+        joint_state_msg = JointState()
+        joint_state_msg.header = Header()
+        joint_state_msg.header.stamp = self.get_clock().now().to_msg()
+        joint_state_msg.header.frame_id = "base_link"
+        joint_state_msg.name = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6"]
     
         # Get current joint state from the arm
         failure, joint_states = self.arm.get_joint_states()
 
-        state_msg.position = joint_states[0]  # Joint positions (in degrees)
-        state_msg.velocity = joint_states[1]  # Joint velocities (degrees/s)
-        state_msg.effort = joint_states[2]  # Joint efforts (Nm ?)
+        joint_state_msg.position = joint_states[0]  # Joint positions (in degrees)
+        joint_state_msg.velocity = joint_states[1]  # Joint velocities (degrees/s)
+        joint_state_msg.effort = joint_states[2]  # Joint efforts (Nm ?)
 
         # Publish the message
-        self.state_pub_.publish(state_msg)
+        self.joint_state_pub.publish(joint_state_msg)
 
         if failure:
             self.get_logger().error("Failed to get joint states from UF850.")
@@ -121,17 +133,44 @@ class XArm(UF850):
         """
         Publishes the current end effector pose of the UF850 robot.
         """
-        
-        return
+        eef_pose_msg = PoseStamped()
+        eef_pose_msg.header = Header()
+        eef_pose_msg.header.stamp = self.get_clock().now().to_msg()
+    
+        # Get current joint state from the arm
+        failure, end_effector_pose = self.arm.get_position()
+        x, y, z, roll, pitch, yaw = end_effector_pose
+
+        qx, qy, qz, qw = get_quaternion_from_euler(roll, pitch, yaw)
+
+        eef_pose_msg.pose.position.x = x
+        eef_pose_msg.pose.position.y = y
+        eef_pose_msg.pose.position.z = z
+
+        eef_pose_msg.pose.orientation.x = qx
+        eef_pose_msg.pose.orientation.y = qy
+        eef_pose_msg.pose.orientation.z = qz
+        eef_pose_msg.pose.orientation.w = qw
+
+        # Publish the message
+        self.eef_pose_pub.publish(eef_pose_msg)
+
+        if failure:
+            self.get_logger().error("Failed to get end effector pose from UF850.")
+            return
 
     def subscribe_vel_cmd(self, msg: TwistStamped):
         """
         Subscribe and move arm with velocity commands
         """
-        x, y, z = msg.twist.linear
-        rx, ry, rz = msg.twist.angular
+        x = msg.twist.linear.x
+        y = msg.twist.linear.y
+        z = msg.twist.linear.z
+        rx = msg.twist.angular.x
+        ry = msg.twist.angular.y
+        rz = msg.twist.angular.z
 
-        self.get_logger().info("                 ")
+        self.get_logger().info("Velocity commands go brrrrrrrrrrrrr")
         self.get_logger().info("------------------------------")
         self.get_logger().info(f"Linear x: {x}")
         self.get_logger().info(f"Linear y: {y}")
@@ -141,7 +180,10 @@ class XArm(UF850):
         self.get_logger().info(f"Angular ry: {ry}")
         self.get_logger().info(f"Angular rz: {rz}")
         self.get_logger().info("------------------------------")
-        # self.get_logger().info("                 ")
+        self.get_logger().info("                 ")
+
+        self.arm.vc_set_cartesian_velocity([x, y, z, rx, ry, rz])
+
         return
 
 def main(args=None):
