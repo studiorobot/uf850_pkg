@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import TwistStamped, PoseStamped
-from std_msgs.msg import Header
+from std_msgs.msg import Header, Bool
 import numpy as np
 import time
 from xarm.wrapper import XArmAPI
@@ -170,17 +170,17 @@ class XArm(UF850):
         ry = msg.twist.angular.y
         rz = msg.twist.angular.z
 
-        self.get_logger().info("Velocity commands go brrrrrrrrrrrrr")
-        self.get_logger().info("------------------------------")
-        self.get_logger().info(f"Linear x: {x}")
-        self.get_logger().info(f"Linear y: {y}")
-        self.get_logger().info(f"Linear z: {z}")
-        self.get_logger().info("------------------------------")
-        self.get_logger().info(f"Angular rx: {rx}")
-        self.get_logger().info(f"Angular ry: {ry}")
-        self.get_logger().info(f"Angular rz: {rz}")
-        self.get_logger().info("------------------------------")
-        self.get_logger().info("                 ")
+        # self.get_logger().info("Velocity commands go brrrrrrrrrrrrr")
+        # self.get_logger().info("------------------------------")
+        # self.get_logger().info(f"Linear x: {x}")
+        # self.get_logger().info(f"Linear y: {y}")
+        # self.get_logger().info(f"Linear z: {z}")
+        # self.get_logger().info("------------------------------")
+        # self.get_logger().info(f"Angular rx: {rx}")
+        # self.get_logger().info(f"Angular ry: {ry}")
+        # self.get_logger().info(f"Angular rz: {rz}")
+        # self.get_logger().info("------------------------------")
+        # self.get_logger().info("                 ")
 
         self.arm.vc_set_cartesian_velocity([x, y, z, rx, ry, rz])
 

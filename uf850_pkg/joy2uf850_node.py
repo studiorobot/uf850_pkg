@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import Joy, JointState
-from geometry_msgs.msg import TwistStamped
-from std_msgs.msg import Header
+from sensor_msgs.msg import Joy
+from geometry_msgs.msg import TwistStamped, PoseStamped
+from std_msgs.msg import Header, Bool
 import numpy as np
 from xarm.wrapper import XArmAPI
+from uf850_pkg.useful_math_functions import get_euler_from_quaternion, get_quaternion_from_euler
 
 ##########################################################
 #################### Copyright 2025 ######################
@@ -20,7 +21,7 @@ class Joy2UF850(Node):
 
 
         # Create a subscription for end effector position
-        self.joint_state_sub = self.create_subscription(JointState, '/uf850_joint_states', self.joint_state_callback, 10)
+        self.joint_state_sub = self.create_subscription(PoseStamped, '/eef_pose', self.eef_state_callback, 10)
 
         # Create a publisher for velocity commands
         self.vel_cmd_pub = self.create_publisher(TwistStamped, "/end_effector_vel_cmd", 10)
@@ -28,14 +29,30 @@ class Joy2UF850(Node):
         # Create a subscription for joystick
         self.joy_sub = self.create_subscription(Joy, "/joy", self.joystick_callback, 10)
 
-    def joint_state_callback(self, msg:JointState):
-        """
-        Callback function for getting joint_state
-        
-        Args:
-            msg (Joy): The joystick message containing axes and button states.
-        """
-        return
+        # Declaring end effector pose as None
+        self._eef_state = None
+
+    def eef_state_callback(self, msg:PoseStamped):
+        self.eef_x = msg.pose.position.x
+        self.eef_y = msg.pose.position.y
+        self.eef_z = msg.pose.position.z
+
+        self.eef_qx = msg.pose.orientation.x
+        self.eef_qy = msg.pose.orientation.y
+        self.eef_qz = msg.pose.orientation.z
+        self.eef_qw = msg.pose.orientation.w
+
+        self.eef_roll, self.eef_pitch, self.eef_yaw = get_euler_from_quaternion(self.eef_qx, self.eef_qy, self.eef_qz, self.eef_qw)
+
+        self._eef_state = 0
+        # self.get_logger().info("")
+        # self.get_logger().info("------------------------------")
+        # self.get_logger().info(f"Eef x: {self.eef_x}")
+        # self.get_logger().info(f"Eef y: {self.eef_y}")
+        # self.get_logger().info(f"Eef z: {self.eef_z}")
+        # self.get_logger().info(f"Eef rx: {self.eef_roll}")
+        # self.get_logger().info(f"Eef ry: {self.eef_pitch}")
+        # self.get_logger().info(f"Eef rz: {self.eef_yaw}")
 
     def joystick_callback(self, msg: Joy):
         """
@@ -75,12 +92,37 @@ class Joy2UF850(Node):
         BTN_STICK_LEFT  = self.joystick_buttons[9]
         BTN_STICK_RIGHT = self.joystick_buttons[10]
 
+        if BTN_POWER:
+            return
+        
+        # Declare some useful parameters:
         linear_speed = 100
-        angular_speed = 50
+        angular_speed = 25
+        z_0 = 500.0
+        z_max = 252.0
+        error_threshold = 0.1
+
+        if self._eef_state is None:
+            return
 
         vx = - (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
         vy = - (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
-        vz = (RIGHT_TRIGGER - LEFT_TRIGGER)/2 * linear_speed
+        
+        # vz = (RIGHT_TRIGGER - LEFT_TRIGGER)/2 * linear_speed
+
+        if RIGHT_TRIGGER == 1:              # NOT Pressed
+            if abs(self.eef_z - z_0) < error_threshold:
+                self.get_logger().error(f"At z_0")
+                vz = 0
+            else:
+                vz = np.clip((z_0 - self.eef_z), -100, 100)
+                self.get_logger().error(f"vz: {vz}")
+        else:
+            if abs(self.eef_z - z_max) < 0.5:
+                self.get_logger().error(f"At z_max")
+                vz = 0
+            else:
+                vz = np.clip((RIGHT_TRIGGER - 1) * (self.eef_z - z_max), -100, 100)
 
         wx = RIGHT_STICK_LR * angular_speed  # Pitch (right stick left/right)
         wy = -RIGHT_STICK_FB * angular_speed  # Roll (right stick up/down)
