@@ -141,12 +141,16 @@ class XArm(UF850):
         failure, end_effector_pose = self.arm.get_position()
         x, y, z, roll, pitch, yaw = end_effector_pose
 
-        qx, qy, qz, qw = get_quaternion_from_euler(roll, pitch, yaw)
 
         eef_pose_msg.pose.position.x = x
         eef_pose_msg.pose.position.y = y
         eef_pose_msg.pose.position.z = z
 
+        # eef_pose_msg.pose.orientation.x = roll
+        # eef_pose_msg.pose.orientation.y = pitch
+        # eef_pose_msg.pose.orientation.z = yaw
+
+        qx, qy, qz, qw = get_quaternion_from_euler(roll, pitch, yaw)
         eef_pose_msg.pose.orientation.x = qx
         eef_pose_msg.pose.orientation.y = qy
         eef_pose_msg.pose.orientation.z = qz

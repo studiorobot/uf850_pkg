@@ -30,9 +30,9 @@ err_max = 0.1
 
 
 try:
-    desired_pose_x = 300
+    desired_pose_x = 150
 
-    x_pid = PID(4.0, 0.0, 2.0, setpoint=desired_pose_x)
+    x_pid = PID(0.05, 0.0, 0.0, setpoint=desired_pose_x)
 
     failure, current_pose = arm.get_position()
     if not failure:
@@ -43,7 +43,7 @@ try:
     while abs(error) > err_max:
         vx = x_pid(current_pose_x)
 
-        arm.vc_set_cartesian_velocity([vx, 0, 0, 0, 0, 0])
+        arm.vc_set_cartesian_velocity([0, 0, 0, vx, 0, 0])
 
         failure, current_pose = arm.get_position()
 

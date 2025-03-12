@@ -58,22 +58,22 @@ start_time = time.time()  # Record the start time for timestamps
 try:
     while True:
         # Move in positive X direction
-        arm.vc_set_cartesian_velocity([100, 0, 0, 0, 0, 0])
+        arm.vc_set_cartesian_velocity([0, 0, 0, 5, 0, 0])
         failure, current_pose = arm.get_position()
         if not failure:
-            positions.append(current_pose[:3])  # Store only X, Y, Z positions
+            positions.append(current_pose[3:])  # Store only X, Y, Z positions
             timestamps.append(time.time() - start_time)  # Store elapsed time
         print(current_pose)
-        time.sleep(0.2)
+        time.sleep(1)
 
         # Move in negative X direction
-        arm.vc_set_cartesian_velocity([-100, 0, 0, 0, 0, 0])
+        arm.vc_set_cartesian_velocity([0, 0, 0, -5, 0, 0])
         failure, current_pose = arm.get_position()
         if not failure:
-            positions.append(current_pose[:3])  # Store only X, Y, Z positions
+            positions.append(current_pose[3:])  # Store only X, Y, Z positions
             timestamps.append(time.time() - start_time)  # Store elapsed time
         print(current_pose)
-        time.sleep(0.2)
+        time.sleep(1)
 
 except KeyboardInterrupt:
     print("Exiting loop...")
