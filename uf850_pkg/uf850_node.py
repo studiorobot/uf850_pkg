@@ -72,6 +72,15 @@ class XArm(UF850):
 
         # Going to Home Position
         self.arm.set_position(*[180.0, 0.0, 500.0, 180, 0, 0], wait=True)
+        time.sleep(1)
+        self.arm.set_position(*[180.0, 0.0, 500.0, 110, 0, 0], wait=True)
+        time.sleep(1)
+
+        # Offset Eef taken brush into account
+        self.arm.set_tcp_offset([0.0, 0.0, 110.0, 0.0, 0.0, 0.0])
+
+        # Offset world with respect to canvas
+        self.arm.set_world_offset([40.0, 30.0, 50.0, 70.0, 0.0, 0.0])
 
         # Initialize Current position and orientation of the arm
         failure, current_pose = self.arm.get_position()
@@ -96,7 +105,10 @@ class XArm(UF850):
         self.arm.reset(wait=True)
 
         # Going to Home Position
+        self.arm.set_tcp_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        self.arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         self.arm.set_position(*[148.8, 0.0, 237.9, 180, 0, 0], wait=True)
+        time.sleep(1)
 
         self.get_logger().info("Shutting down robot...")
         self.arm.disconnect()

@@ -100,21 +100,26 @@ class Joy2UF850(Node):
             return
         
         # Declare some useful parameters:
-        linear_speed = 100
-        angular_speed = 25
+        linear_speed = 50
+        angular_speed = 10
 
         if self._eef_state is None:
             return
 
         ########################## MAPPING LINEAR MOVEMENT #################################
 
-        vx = - (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
-        vy = - (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
+        # vx = - (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
+        # vy = - (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
+
+        vy = - (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
+        vx =  (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
         
         # vz = (RIGHT_TRIGGER - LEFT_TRIGGER)/2 * linear_speed
 
-        z_0 = 500.0
-        z_max = 251.0
+        # z_0 = 500.0 - 110.0
+        # z_max = 251.0 - 110.0
+        z_0 = 200.0
+        z_max = 47.5
         if RIGHT_TRIGGER == 1:              # NOT Pressed
             if abs(self.eef_z - z_0) < 0.5:
                 vz = 0
@@ -160,8 +165,12 @@ class Joy2UF850(Node):
         # if RIGHT_STICK_FB == 0:  # Return to neutral for wy (roll)
         #     wy = np.clip(-axis[1] * angle * 10, -25, 25) if angle >= 0.1 else 0
         # else:  # Joystick active for wy (roll)
-        wx = RIGHT_STICK_LR * angular_speed
-        wy = -RIGHT_STICK_FB * angular_speed * 0
+        
+        # wx = RIGHT_STICK_LR * angular_speed
+        # wy = -RIGHT_STICK_FB * angular_speed
+
+        wy = RIGHT_STICK_LR * angular_speed
+        wx = RIGHT_STICK_FB * angular_speed
 
         wz = (BTN_LB - BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
 
