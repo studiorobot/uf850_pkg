@@ -73,14 +73,21 @@ class XArm(UF850):
         # Going to Home Position
         self.arm.set_position(*[180.0, 0.0, 500.0, 180, 0, 0], wait=True)
         time.sleep(1)
-        self.arm.set_position(*[180.0, 0.0, 500.0, 110, 0, 0], wait=True)
+        self.arm.set_position(*[500.0, 0.0, 500.0, 95, 0, 0], wait=True)
         time.sleep(1)
 
         # Offset Eef taken brush into account
         self.arm.set_tcp_offset([0.0, 0.0, 110.0, 0.0, 0.0, 0.0])
 
+        x_offset = 575.0
+        y_offset = -235.0
+        z_offset = 300.0
+        rx_offset = 87.5
+        ry_offset = 0.0
+        rz_offset = 90.0
+
         # Offset world with respect to canvas
-        self.arm.set_world_offset([40.0, 30.0, 50.0, 70.0, 0.0, 0.0])
+        self.arm.set_world_offset([-z_offset, -x_offset, -y_offset, rx_offset, ry_offset, rz_offset])
 
         # Initialize Current position and orientation of the arm
         failure, current_pose = self.arm.get_position()

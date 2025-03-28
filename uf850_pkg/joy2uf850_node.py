@@ -5,9 +5,10 @@ from sensor_msgs.msg import Joy
 from geometry_msgs.msg import TwistStamped, PoseStamped
 from std_msgs.msg import Header, Bool
 import numpy as np
-import math
+from sensor_msgs.msg import JointState
+import time
 from xarm.wrapper import XArmAPI
-from uf850_pkg.useful_math_functions import quaternion_multiply, quaternion_conjugate
+from uf850_pkg.useful_math_functions import get_euler_from_quaternion, get_quaternion_from_euler
 
 ##########################################################
 #################### Copyright 2025 ######################
@@ -32,6 +33,8 @@ class Joy2UF850(Node):
 
         # Declaring end effector pose as None
         self._eef_state = None
+        self.current_state = "idle"
+        self.next_state = "idle"
 
     def eef_state_callback(self, msg:PoseStamped):
         self.eef_x = msg.pose.position.x
@@ -58,6 +61,17 @@ class Joy2UF850(Node):
         # self.get_logger().info(f"Eef ry: {self.eef_pitch}")
         # self.get_logger().info(f"Eef rz: {self.eef_yaw}")
 
+    def set_next_state(self, state):
+        """!
+        @brief      Sets the next state.
+
+            This is in a different thread than run so we do nothing here and let run handle it on the next iteration.
+
+        @param      state  a string representing the next state.
+        """
+        self.next_state = state
+
+    
     def joystick_callback(self, msg: Joy):
         """
         Callback function for processing joystick inputs.
@@ -65,6 +79,7 @@ class Joy2UF850(Node):
         Args:
             msg (Joy): The joystick message containing axes and button states.
         """
+
         # Update joystick states
         self.joystick_axes = msg.axes
         self.joystick_buttons = msg.buttons
@@ -95,12 +110,9 @@ class Joy2UF850(Node):
         BTN_POWER       = self.joystick_buttons[8]
         BTN_STICK_LEFT  = self.joystick_buttons[9]
         BTN_STICK_RIGHT = self.joystick_buttons[10]
-
-        if BTN_POWER:
-            return
         
         # Declare some useful parameters:
-        linear_speed = 50
+        linear_speed = 25
         angular_speed = 10
 
         if self._eef_state is None:
@@ -108,18 +120,11 @@ class Joy2UF850(Node):
 
         ########################## MAPPING LINEAR MOVEMENT #################################
 
-        # vx = - (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
-        # vy = - (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
+        vx = (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
+        vy = (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
 
-        vy = - (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
-        vx =  (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
-        
-        # vz = (RIGHT_TRIGGER - LEFT_TRIGGER)/2 * linear_speed
-
-        # z_0 = 500.0 - 110.0
-        # z_max = 251.0 - 110.0
-        z_0 = 200.0
-        z_max = 47.5
+        z_0 = 40.0
+        z_max = z_0 - 100
         if RIGHT_TRIGGER == 1:              # NOT Pressed
             if abs(self.eef_z - z_0) < 0.5:
                 vz = 0
@@ -131,46 +136,10 @@ class Joy2UF850(Node):
             else:   # GO DOWN
                 vz = np.clip((RIGHT_TRIGGER - 1) * (self.eef_z - z_max), -50, 50)
 
-        # self.get_logger().info(f"vz: {vz}")
-
 
         ########################## MAPPING ORIENTATION #################################
-
-
-        # q_0 = [1, 0, 0, 0]
-        # q_current = [self.eef_qx, self.eef_qy, self.eef_qz, self.eef_qw]
-        # # Compute quaternion error
-        # q_error = quaternion_multiply(q_current, quaternion_conjugate(q_0))
-
-        # # Extract components of the quaternion error
-        # w_error = q_error[0]
-        # x_error = q_error[1]
-        # y_error = q_error[2]
-        # z_error = q_error[3]
-
-        # # Convert quaternion error to axis-angle representation
-        # angle = 2 * math.acos(w_error)
-        # axis = np.array([x_error, y_error, z_error])
-        # if np.linalg.norm(axis) > 1e-6:  # Avoid division by zero
-        #     axis /= np.linalg.norm(axis)
-
-        # # Control logic for wx and wy
-        # if RIGHT_STICK_LR == 0:  # Return to neutral for wx (pitch)
-        #     wx = np.clip(-axis[0] * angle * 1000, -100, 100) if angle >= 0.1 else 0
-        # else:  # Joystick active for wx (pitch)
-        #     wx = RIGHT_STICK_LR * angular_speed
-
-        # self.get_logger().info(f"Eef wx: {wx}")
-
-        # if RIGHT_STICK_FB == 0:  # Return to neutral for wy (roll)
-        #     wy = np.clip(-axis[1] * angle * 10, -25, 25) if angle >= 0.1 else 0
-        # else:  # Joystick active for wy (roll)
-        
-        # wx = RIGHT_STICK_LR * angular_speed
-        # wy = -RIGHT_STICK_FB * angular_speed
-
-        wy = RIGHT_STICK_LR * angular_speed
-        wx = RIGHT_STICK_FB * angular_speed
+        wx = -RIGHT_STICK_LR * angular_speed
+        wy = RIGHT_STICK_FB * angular_speed
 
         wz = (BTN_LB - BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
 
