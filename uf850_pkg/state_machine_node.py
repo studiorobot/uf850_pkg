@@ -299,74 +299,176 @@ from uf850_pkg.useful_math_functions import get_euler_from_quaternion, get_quate
 #         self.arm.vc_set_cartesian_velocity([vx, vy, vz, wx, wy, wz])
 
 
-class PaintingState():
-    def __init__(self,node):
-        #super().__init__(outcomes = ['stay','to_idle'])
-        self.node = node #state machine node, sharing with other class
-        
-        self.next_state = None
-
-    def on_text_received(self,msg):
-        self.node.get_logger().info(f'data revceived: {msg.data}')
-        if msg.data == 'stop':
-            self.next_state = 'IDLE'
-        else:
-            self.next_state = None
-
-    def execute(self):
-        self.next_state = None
-        self.node.get_logger().info('state_draw...\n')
-        while rclpy.ok() and self.next_state is None:
-            rclpy.spin_once(self.node, timeout_sec = 0.1)
-        return self.next_state
 
 class IdleState():
+    """
+    Idling
+    """
     def __init__(self,node):
-        #super().__init__(outcomes = ['stay','to_painting'])
         self.node = node #state machine node, sharing with other class
         
         self.next_state = None
 
-    def on_text_received(self,msg):
-        #print('msg.data: ',msg.data)
-        self.node.get_logger().info(f'data revceived: {msg.data}')
-        if msg.data == 'draw':
-            self.next_state = 'IMAGEGEN'
-        else:
-            self.next_state = None
+    def execute(self):
+        self.next_state = None
+        self.node.get_logger().info("Current State: IDLE")
+        self.node.get_logger().info("")
+
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        return self.node.requested_state or self.next_state
+    
+class GoHomeState():
+    """
+    Go to Home Position
+    """
+    def __init__(self,node):
+        self.node = node #state machine node, sharing with other class
+        self.next_state = None
 
     def execute(self):
         self.next_state = None
-        self.node.get_logger().info('state_idle...\n')
-        while rclpy.ok() and self.next_state is None:
-            rclpy.spin_once(self.node, timeout_sec = 0.1)
-        return self.next_state
+
+        self.node.get_logger().info("Current State: GO HOME")
+        self.node.get_logger().info("Moving Robot Home")
+        self.node.get_logger().info("")
+        # TODO: Add Coord switching logic here
+        self.next_state = "IDLE"
+        
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        return self.node.requested_state or self.next_state
+
+class MoveState():
+    """
+    Receive Joystick Axes Input and Move Robot
+    """
+    def __init__(self,node):
+        self.node = node #state machine node, sharing with other class
+        self.next_state = None
+        self.timeout_duration = 1.5  # Timeout in seconds for inactivity
+        self.last_activity = time.time()
+
+
+    def execute(self):
+        self.next_state = None
+        self.node.get_logger().info("Current State: MOVE")
+        self.last_activity_time = time.time()  # Reset on entry
+
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+            if self.node.is_joystick_active():
+                self.last_activity = time.time()
+                # Perform movement logic (e.g., send velocity commands)
+                self.node.get_logger().info(f"Moving robot: X={self.node.LEFT_STICK_LR}, Y={self.node.LEFT_STICK_FB}")
+                self.node.get_logger().info(f"Moving robot: RX={self.node.RIGHT_STICK_LR}, RY={self.node.RIGHT_STICK_FB}")
+                self.node.get_logger().info(f"Moving robot: UP={self.node.LEFT_TRIGGER}, RY={self.node.RIGHT_TRIGGER}")
+                self.node.get_logger().info("")
+
+                # TODO: Add movement logic (e.g., publishing Twist messages)
+
+            # Check for inactivity timeout
+            elif time.time() - self.last_activity > self.timeout_duration:
+                self.node.get_logger().info("No input detected, transitioning to IDLE")
+                return 'IDLE'
+
+        return self.node.requested_state
+
+class PaintingState():
+    """
+    Change to Canvas Coordinates
+    """
+    def __init__(self,node):
+        self.node = node #state machine node, sharing with other class
+        
+        self.next_state = None
+
+    def execute(self):
+        self.next_state = "GO HOME"
+
+        self.node.get_logger().info("Current State: PAINTING")
+        self.node.get_logger().info("Switched to Canvas Coord")
+        # TODO: Add Coord switching logic here
+        self.node.is_already_in_canvas_frame = True
+        
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        return self.node.requested_state or self.next_state
+    
+class ChangePaintState():
+    """
+    Change to Palette Coordinates
+    """
+    def __init__(self,node):
+        self.node = node #state machine node, sharing with other class
+        
+        self.next_state = None
+
+    def execute(self):
+
+        self.node.get_logger().info("Current State: CHANGE PAINT")
+        self.node.get_logger().info("Switched to Palette Coord")
+        # TODO: Add Coord switching logic here
+        self.node.is_already_in_canvas_frame = False
+        
+        self.next_state = "GO HOME"
+
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        
+        return self.node.requested_state or self.next_state
     
 class StateMachineNode(Node):
     def __init__(self):
         super().__init__('state_machine_node')
         self.get_logger().info("state machine node started")
         
-        #sm = smach.StateMachine(outcomes = ['finished'])
-
-        #with sm:
-        #    smach.StateMachine.add('IDLE',IdleState(self),transitions = {'to_painting': 'PAINTING', 'stay': 'IDLE'})
-        #    smach.StateMachine.add('PAINTING',IdleState(self),transitions = {'to_idle': 'IDLE', 'stay': 'PAINTING'})
-
-        #outcome = sm.execute()
-        #self.get_logger.info(f'state machine finished with outcome: {outcome}')
-        
         # Create a subscription for joystick
         self.joy_sub = self.create_subscription(Joy, "/joy", self.joystick_callback, 10)
 
+        self.prev_btn_y = 0  # Track previous button state
         self.prev_btn_b = 0  # Track previous button state
+        self.requested_state = None
 
         self.states = {
             'IDLE': IdleState(self),
             'PAINTING': PaintingState(self),
+            'MOVE': MoveState(self),
+            'CHANGE PAINT': ChangePaintState(self),
+            'GO HOME': GoHomeState(self),
         }
 
-        self.current_state = 'IDLE'
+        self.current_state = 'CHANGE PAINT'
+        self.is_already_in_canvas_frame = False
+
+    def is_joystick_active(self):
+        """Returns True if any joystick input exceeds deadzones"""
+        if not self.joystick_axes:
+            return False
+        
+        STICK_DEADZONE = 0.05
+        TRIGGER_DEADZONE = 0.95  # Since triggers rest at 1.0 when neutral
+
+        active_axes = [
+            self.LEFT_STICK_LR,
+            self.LEFT_STICK_FB,
+            self.RIGHT_STICK_LR,
+            self.RIGHT_STICK_FB,
+            self.CROSS_KEY_LR,
+            self.CROSS_KEY_FB
+        ]
+
+        # Check sticks and cross keys (axes 0,1,3,4,6,7)
+        stick_active = any(abs(axis) > STICK_DEADZONE for axis in active_axes)
+        
+        # Check triggers (axes 2 and 5)
+        trigger_active = (
+            abs(self.LEFT_TRIGGER - 1.0) > TRIGGER_DEADZONE or
+            abs(self.RIGHT_TRIGGER - 1.0) > TRIGGER_DEADZONE
+        )
+        
+        return stick_active or trigger_active
 
     def joystick_callback(self, msg: Joy):
         """
@@ -376,58 +478,91 @@ class StateMachineNode(Node):
             msg (Joy): The joystick message containing axes and button states.
         """
 
-        # Update joystick states
+        if self.requested_state:
+            return  # Ignore new requests during transitions
+
         self.joystick_axes = msg.axes
         self.joystick_buttons = msg.buttons
+        self.last_joystick_update = time.time()
         
         if len(self.joystick_axes) < 8 or len(self.joystick_buttons) < 11:
             self.get_logger().error(f"Joystick input has insufficient data: {len(self.joystick_axes)} axes, {len(self.joystick_buttons)} buttons")
             return
 
         # Mapping to Xbox Joystick axes
-        LEFT_STICK_LR   = self.joystick_axes[0]
-        LEFT_STICK_FB   = self.joystick_axes[1]
-        LEFT_TRIGGER    = self.joystick_axes[2]
-        RIGHT_STICK_LR  = self.joystick_axes[3]
-        RIGHT_STICK_FB  = self.joystick_axes[4]
-        RIGHT_TRIGGER   = self.joystick_axes[5]
-        CROSS_KEY_LR    = self.joystick_axes[6]
-        CROSS_KEY_FB    = self.joystick_axes[7]
+        self.LEFT_STICK_LR   = self.joystick_axes[0]
+        self.LEFT_STICK_FB   = self.joystick_axes[1]
+        self.LEFT_TRIGGER    = self.joystick_axes[2]
+        self.RIGHT_STICK_LR  = self.joystick_axes[3]
+        self.RIGHT_STICK_FB  = self.joystick_axes[4]
+        self.RIGHT_TRIGGER   = self.joystick_axes[5]
+        self.CROSS_KEY_LR    = self.joystick_axes[6]
+        self.CROSS_KEY_FB    = self.joystick_axes[7]
 
         # Mapping to Xbox Joystick buttons
-        BTN_A           = self.joystick_buttons[0]
-        BTN_B           = self.joystick_buttons[1]
-        BTN_X           = self.joystick_buttons[2]
-        BTN_Y           = self.joystick_buttons[3]
-        BTN_LB          = self.joystick_buttons[4]
-        BTN_RB          = self.joystick_buttons[5]
-        BTN_BACK        = self.joystick_buttons[6]
-        BTN_START       = self.joystick_buttons[7]
-        BTN_POWER       = self.joystick_buttons[8]
-        BTN_STICK_LEFT  = self.joystick_buttons[9]
-        BTN_STICK_RIGHT = self.joystick_buttons[10]
+        self.BTN_A           = self.joystick_buttons[0]
+        self.BTN_B           = self.joystick_buttons[1]
+        self.BTN_X           = self.joystick_buttons[2]
+        self.BTN_Y           = self.joystick_buttons[3]
+        self.BTN_LB          = self.joystick_buttons[4]
+        self.BTN_RB          = self.joystick_buttons[5]
+        self.BTN_BACK        = self.joystick_buttons[6]
+        self.BTN_START       = self.joystick_buttons[7]
+        self.BTN_POWER       = self.joystick_buttons[8]
+        self.BTN_STICK_LEFT  = self.joystick_buttons[9]
+        self.BTN_STICK_RIGHT = self.joystick_buttons[10]
 
-        # Transition logic for B button
-        current_btn_b = self.joystick_buttons[1]
+        # Y BUTTON SWITCH BETWEEN COORD FRAMES
+        #-------------------------------------------------------------
+        current_btn_y = self.BTN_Y
+        if current_btn_y == 1 and self.prev_btn_y == 0:
+            if not self.is_already_in_canvas_frame:
+                self.requested_state = 'PAINTING'
+                # self.get_logger().info("Y Received 1")
+            else:
+                self.requested_state = 'CHANGE PAINT' 
+                # self.get_logger().info("Y Received 2")
+        self.prev_btn_y = current_btn_y  # Update previous state
+        #=============================================================
+
+        # B BUTTON MOVE THE ROBOT HOME
+        #-------------------------------------------------------------
+        current_btn_b = self.BTN_B
         if current_btn_b == 1 and self.prev_btn_b == 0:
-            if self.current_state == 'IDLE':
-                self.current_state = 'PAINTING'
-                self.get_logger().info("Transitioning to PAINTING")
-            elif self.current_state == 'PAINTING':
-                self.current_state = 'IDLE' 
-                self.get_logger().info("Transitioning to IDLE")
-        
+            self.requested_state = 'GO HOME'
+            # self.get_logger().info("B Received 1")
         self.prev_btn_b = current_btn_b  # Update previous state
+        #=============================================================
+
+        # JOY AXES MOVE THE ROBOT
+        # ------------------------------------------------------------
+        if self.is_joystick_active() and self.current_state != 'MOVE':
+            self.requested_state = 'MOVE'
         
+        #=============================================================
+
+        # JOY AXES MOVE THE ROBOT
+        # ------------------------------------------------------------
+        if self.is_joystick_active() and self.current_state != 'MOVE':
+            self.requested_state = 'MOVE'
+        
+        #=============================================================
 
     def run(self):
         while rclpy.ok():
             state_instance = self.states[self.current_state]
+            
+            if self.requested_state:
+                self.current_state = self.requested_state
+                self.requested_state = None
+                # self.get_logger().info(f"State changed to {self.current_state}")
+                continue  # Restart loop with new state
+            
             next_state = state_instance.execute()
 
             if next_state:
                 self.current_state = next_state
-                self.get_logger().info("state switched!")
+                # self.get_logger().info("state switched!")
             else:
                 break
 
