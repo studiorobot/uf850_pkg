@@ -120,11 +120,11 @@ class Joy2UF850(Node):
 
         ########################## MAPPING LINEAR MOVEMENT #################################
 
-        vx = (LEFT_STICK_FB) * linear_speed # Forward/backward (left stick up/down)
-        vy = (LEFT_STICK_LR) * linear_speed # Left/right (left stick left/right)
+        vx = (LEFT_STICK_LR) * linear_speed
+        vy = - (LEFT_STICK_FB) * linear_speed
 
-        z_0 = 40.0
-        z_max = z_0 - 100
+        z_max = 40
+        z_0 = z_max + 20
         if RIGHT_TRIGGER == 1:              # NOT Pressed
             if abs(self.eef_z - z_0) < 0.5:
                 vz = 0
