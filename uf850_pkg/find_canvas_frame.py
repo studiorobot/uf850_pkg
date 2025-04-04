@@ -16,7 +16,7 @@ try:
     arm.set_mode(0)
     arm.set_state(0)
 
-    # arm.move_gohome(wait=True)
+    arm.move_gohome(wait=True)
 
     input("Remove the brush from robot [ENTER]")
     print()
@@ -32,16 +32,25 @@ try:
 
     while True:
         print("Move robot to and against canvas origin")
-        print("Rotate the brush end until Pitch and Yaw is approximately 0 on web app")
         record = input("Press [ENTER]")
         print()
         break
 
-    failure, current_pose = arm.get_position()
-
     arm.stop_record_trajectory()
     arm.set_mode(0)
     arm.set_state(0)
+    
+    failure, current_pose = arm.get_position()
+    arm.set_position(*[
+        current_pose[0],
+        current_pose[1],
+        current_pose[2],
+        current_pose[3],
+        0,
+        0,
+    ], wait=True)
+
+    failure, current_pose = arm.get_position()
 
     x_offset = -current_pose[0]
     y_offset = current_pose[2]
