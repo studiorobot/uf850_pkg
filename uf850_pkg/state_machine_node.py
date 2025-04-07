@@ -179,7 +179,7 @@ class StateMachineNode(Node):
         self.arm.set_mode(0)
         self.arm.set_state(state=0)
         time.sleep(1)
-        
+
         self.arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], wait=True)
         time.sleep(1)
 
@@ -437,36 +437,45 @@ class StateMachineNode(Node):
         #=============================================================
 
     def run(self):
-        while rclpy.ok():
-            state_instance = self.states[self.current_state]
-            
-            if self.requested_state:
-                self.current_state = self.requested_state
-                self.requested_state = None
-                # self.get_logger().info(f"State changed to {self.current_state}")
-                continue  # Restart loop with new state
-            
-            next_state = state_instance.execute()
+        try:
+            while rclpy.ok():
+                state_instance = self.states[self.current_state]
+                
+                if self.requested_state:
+                    self.current_state = self.requested_state
+                    self.requested_state = None
+                    # self.get_logger().info(f"State changed to {self.current_state}")
+                    continue  # Restart loop with new state
+                
+                next_state = state_instance.execute()
 
-            if next_state:
-                self.current_state = next_state
-                # self.get_logger().info("state switched!")
-            else:
-                break
+                if next_state:
+                    self.current_state = next_state
+                    # self.get_logger().info("state switched!")
+                else:
+                    break
+        except KeyboardInterrupt:
+            self.get_logger().info("State machine interrupted.")
 
 def main(args=None):
     rclpy.init(args=args)
     state_machine_node = StateMachineNode(ip="192.168.1.227")
+    executor = rclpy.executors.MultiThreadedExecutor()
 
     try:
+        executor.add_node(state_machine_node)
+        # Run your state machine logic
         state_machine_node.run()
     except KeyboardInterrupt:
+        pass  # Let finally block handle cleanup
+    except Exception as e:
+        state_machine_node.get_logger().error(f"Critical error: {e}")
+    finally:
+        # Cleanup sequence
+        executor.shutdown()
         state_machine_node.good_night_robot()
         state_machine_node.destroy_node()
-        rclpy.shutdown()
-    finally:
-        state_machine_node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 if __name__ == '__main__':
     main()
