@@ -73,6 +73,9 @@ class XArm(UF850):
         self.arm.set_state(state=0)
         time.sleep(1)
 
+        # self.arm.set_tcp_offset([0.0, 0.0, 78.78, 0.0, 0.0, 0.0], wait=True)
+        # time.sleep(1)
+
         # Read from JSON to get offset
         package_share_dir = get_package_share_directory('uf850_pkg')
         json_file_path = os.path.join(package_share_dir, 'config', 'canvas_frame_offset.json')
@@ -95,15 +98,20 @@ class XArm(UF850):
         
         # Going to Home Position
         self.arm.set_position(*[180.0, 0.0, 500.0, 180, 0, 0], wait=True)
-        time.sleep(1)
-        self.arm.set_position(*[500.0, 0.0, 500.0, -(rx_offset - 180) , ry_offset, rz_offset], wait=True)
-        time.sleep(1)
+
+        # Move arm to safe location to avoid self collision
+        self.arm.set_position(*[-x_offset, 0.0, 600, -(rx_offset - 180) , ry_offset, rz_offset], wait=True)
+        # time.sleep(1)
 
         # Offset Eef taken brush into account
         self.arm.set_tcp_offset([0.0, 0.0, 110.0, 0.0, 0.0, 0.0], wait=True)
 
         # Offset World
         self.arm.set_world_offset([x_offset, y_offset, z_offset, rx_offset, ry_offset, rz_offset], wait=True)
+        time.sleep(1)
+
+        # self.arm.set_position([0.0, 0.0, 0.0, 180, 0.0, 0.0], wait=True)
+        # time.sleep(1)
 
         # Initialize Current position and orientation of the arm
         failure, current_pose = self.arm.get_position()

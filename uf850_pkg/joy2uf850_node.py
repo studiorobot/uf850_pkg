@@ -123,23 +123,23 @@ class Joy2UF850(Node):
         vx = (LEFT_STICK_LR) * linear_speed
         vy = - (LEFT_STICK_FB) * linear_speed
 
-        z_max = 40
-        z_0 = z_max + 20
+        z_max = 10
+        z_0 = z_max + 40
         if RIGHT_TRIGGER == 1:              # NOT Pressed
-            if abs(self.eef_z - z_0) < 0.5:
+            if abs(self.eef_z - z_0) < 0.1:
                 vz = 0
             else:   # GO UP
                 vz = np.clip((z_0 - self.eef_z), -200, 200)
         else:
-            if abs(self.eef_z - z_max) < 0.5:
+            if abs(self.eef_z - z_max) < 0.1:
                 vz = 0
             else:   # GO DOWN
                 vz = np.clip((RIGHT_TRIGGER - 1) * (self.eef_z - z_max), -50, 50)
 
 
         ########################## MAPPING ORIENTATION #################################
-        wx = -RIGHT_STICK_LR * angular_speed
-        wy = RIGHT_STICK_FB * angular_speed
+        wx = RIGHT_STICK_FB * angular_speed
+        wy = RIGHT_STICK_LR * angular_speed
 
         wz = (BTN_LB - BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
 

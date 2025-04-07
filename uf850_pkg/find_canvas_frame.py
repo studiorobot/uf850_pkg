@@ -12,15 +12,17 @@ arm = XArmAPI("192.168.1.227")
 try:
     print("Homing the robot")
     print()
+    arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     arm.motion_enable(enable=True)
     arm.set_mode(0)
     arm.set_state(0)
 
-    arm.move_gohome(wait=True)
+    # arm.move_gohome(wait=True)
 
     input("Remove the brush from robot [ENTER]")
     print()
     arm.set_tcp_offset([0.0, 0.0, 78.78, 0.0, 0.0, 0.0])
+    arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     time.sleep(0.1)
 
     input("Setting robot to MANUAL MODE [ENTER]")
@@ -50,14 +52,6 @@ try:
         0,
     ], wait=True)
 
-    failure, current_pose = arm.get_position()
-
-    x_offset = -current_pose[0]
-    y_offset = current_pose[2]
-    z_offset = -current_pose[1]
-    rx_offset = 180 - current_pose[3]
-    ry_offset = 0.0
-    rz_offset = 0.0
 
     input("Verifying coordinate frame [ENTER]")
     print()
@@ -68,11 +62,19 @@ try:
     failure, current_pose = arm.get_position()
     print(current_pose)
 
+    rx_offset = 180 - current_pose[3]
+    ry_offset = 0.0
+    rz_offset = 0.0
+
     print("Rotating the frame to match, see frames on web app")
     arm.set_world_offset([0, 0, 0, rx_offset, ry_offset, rz_offset])
     time.sleep(1)
     failure, current_pose = arm.get_position()
     print(current_pose)
+    
+    x_offset = -current_pose[0]
+    y_offset = -current_pose[1]
+    z_offset = -current_pose[2]
 
     print("Translating the frame to match, see frames on web app")
     arm.set_world_offset([x_offset, y_offset, z_offset, rx_offset, ry_offset, rz_offset])
