@@ -41,7 +41,9 @@ class IdleState():
             self.node.arm.set_state(state=0)
             time.sleep(1)
 
-            self.node.arm.set_position(*[self.node.eef_x, self.node.eef_y, self.node.eef_z, 180, 0, 0], wait=True)
+            failure, end_effector_pose = self.node.arm.get_position()
+            eef_x, eef_y, eef_z, eef_rx, eef_ry, eef_rz = end_effector_pose
+            self.node.arm.set_position(*[eef_x, eef_y, eef_z, 180, 0, 0], wait=True)
             
             # set cartesian velocity control mode
             self.node.get_logger().info("Switching to velocity control mode!")
@@ -67,12 +69,31 @@ class GoHomeState():
         self.node.get_logger().info("Current State: GO HOME")
         self.node.get_logger().info("Moving Robot Home")
         self.node.get_logger().info("")
-        # TODO: Add Coord switching logic here
+        # TODO: Add Home Pose here:
+        to_canvas = self.node.is_already_in_canvas_frame
+        self.go_home(to_canvas)
         self.next_state = "IDLE"
         
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
             rclpy.spin_once(self.node, timeout_sec=0.1)
         return self.node.requested_state or self.next_state
+    
+    def go_home(self, to_canvas):
+        self.node.arm.set_mode(0)
+        self.node.arm.set_state(state=0)
+        time.sleep(1)
+
+        if to_canvas:
+            self.node.arm.set_position(*[0.0, 0.0, 75.4, 180, 0, 0], wait=True)
+        else:
+            self.node.arm.set_position(*[160.0, 160.0, 340.0, 180, 0, 0], wait=True)
+        
+        # set cartesian velocity control mode
+        self.node.get_logger().info("Switching to velocity control mode!")
+        self.node.arm.set_mode(5)
+        self.node.arm.set_state(0)
+        time.sleep(1)
+
 
 class MoveState():
     """
@@ -84,7 +105,6 @@ class MoveState():
         self.timeout_duration = 5.0  # Timeout in seconds for inactivity
         self.last_activity = time.time()
 
-
     def execute(self):
         self.next_state = None
         self.node.get_logger().info("Current State: MOVE")
@@ -93,43 +113,10 @@ class MoveState():
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
             rclpy.spin_once(self.node, timeout_sec=0.1)
             
-            if self.node.is_joystick_active() and self.node._eef_state is not None:
-                self.last_activity = time.time()
-                # Perform movement logic (e.g., send velocity commands)
-                # Declare some useful parameters:
-                linear_speed = 25
-                angular_speed = 10
-
-                ########################## MAPPING LINEAR MOVEMENT #################################
-
-                vx = (self.node.LEFT_STICK_LR) * linear_speed
-                vy = - (self.node.LEFT_STICK_FB) * linear_speed
-
-                z_max = 10
-                z_0 = z_max + 40
-                if self.node.RIGHT_TRIGGER == 1:              # NOT Pressed
-                    if abs(self.node.eef_z - z_0) < 0.1:
-                        vz = 0
-                    else:   # GO UP
-                        vz = np.clip((z_0 - self.node.eef_z), -200, 200)
-                else:
-                    if abs(self.node.eef_z - z_max) < 0.1:
-                        vz = 0
-                    else:   # GO DOWN
-                        vz = np.clip((self.node.RIGHT_TRIGGER - 1) * (self.node.eef_z - z_max), -50, 50)
-
-
-                ########################## MAPPING ORIENTATION #################################
-                wx = self.node.RIGHT_STICK_FB * angular_speed
-                wy = self.node.RIGHT_STICK_LR * angular_speed
-
-                wz = (self.node.BTN_LB - self.node.BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
-
-                self.node.arm.vc_set_cartesian_velocity([vx, vy, vz, wx, wy, wz])
-
+            if self.node.is_already_in_canvas_frame:
+                self.velocity_control_canvas()
             else:
-                self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-
+                self.velocity_control_pallete()
 
             # Check for inactivity timeout
             if time.time() - self.last_activity > self.timeout_duration:
@@ -138,6 +125,68 @@ class MoveState():
                 return 'IDLE'
 
         return self.node.requested_state
+    
+    def velocity_control_canvas(self):
+        if self.node.is_joystick_active() and self.node._eef_state is not None:
+            self.last_activity = time.time()
+            # Perform movement logic (e.g., send velocity commands)
+            # Declare some useful parameters:
+            linear_speed = 25
+            angular_speed = 10
+
+            ########################## MAPPING LINEAR MOVEMENT #################################
+
+            vx = (self.node.LEFT_STICK_LR) * linear_speed
+            vy = - (self.node.LEFT_STICK_FB) * linear_speed
+
+            z_max = 10
+            z_0 = z_max + 40
+            if self.node.RIGHT_TRIGGER == 1:              # NOT Pressed
+                if abs(self.node.eef_z - z_0) < 0.1:
+                    vz = 0
+                else:   # GO UP
+                    vz = np.clip((z_0 - self.node.eef_z), -200, 200)
+            else:
+                if abs(self.node.eef_z - z_max) < 0.1:
+                    vz = 0
+                else:   # GO DOWN
+                    vz = np.clip((self.node.RIGHT_TRIGGER - 1) * (self.node.eef_z - z_max), -50, 50)
+
+
+            ########################## MAPPING ORIENTATION #################################
+            wx = self.node.RIGHT_STICK_FB * angular_speed
+            wy = self.node.RIGHT_STICK_LR * angular_speed
+
+            wz = (self.node.BTN_LB - self.node.BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
+
+            self.node.arm.vc_set_cartesian_velocity([vx, vy, vz, wx, wy, wz])
+
+        else:
+            self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
+    def velocity_control_pallete(self):
+        if self.node.is_joystick_active() and self.node._eef_state is not None:
+            self.last_activity = time.time()
+            # Perform movement logic (e.g., send velocity commands)
+            # Declare some useful parameters:
+            linear_speed = 25
+            angular_speed = 10
+
+            ########################## MAPPING LINEAR MOVEMENT #################################
+
+            vx = (self.node.LEFT_STICK_LR) * linear_speed
+            vy = -(self.node.LEFT_STICK_FB) * linear_speed
+            vz = (self.node.RIGHT_TRIGGER - self.node.LEFT_TRIGGER) * linear_speed
+
+            ########################## MAPPING ORIENTATION #################################
+            wx = self.node.RIGHT_STICK_FB * angular_speed
+            wy = self.node.RIGHT_STICK_LR * angular_speed
+            wz = (self.node.BTN_LB - self.node.BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
+
+            self.node.arm.vc_set_cartesian_velocity([vx, vy, vz, wx, wy, wz])
+
+        else:
+            self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
 
 class PaintingState():
     """
@@ -154,6 +203,7 @@ class PaintingState():
         self.node.get_logger().info("Current State: PAINTING")
         self.node.get_logger().info("Switched to Canvas Coord")
         # TODO: Add Coord switching logic here
+        self.node.switch_frame(to_canvas=True)
         self.node.is_already_in_canvas_frame = True
         
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
@@ -174,6 +224,7 @@ class ChangePaintState():
         self.node.get_logger().info("Current State: CHANGE PAINT")
         self.node.get_logger().info("Switched to Palette Coord")
         # TODO: Add Coord switching logic here
+        self.node.switch_frame(to_canvas=False)
         self.node.is_already_in_canvas_frame = False
         
         self.next_state = "GO HOME"
@@ -275,21 +326,21 @@ class StateMachineNode(Node):
         # self.arm.set_position(*[-self.x_offset, 0.0, 600, -(self.rx_offset - 180) , self.ry_offset, self.rz_offset], wait=True)
         # time.sleep(1)
 
-        self.get_logger().info("Offseting world frame to canvas...")
-        # self.switch_frame(to_canvas=False)
-        self.switch_frame(to_canvas=True)
+        # self.get_logger().info("Offseting world frame to canvas...")
+        # # self.switch_frame(to_canvas=False)
+        # self.switch_frame(to_canvas=True)
 
-        self.get_logger().info("Moving to canvas...")
-        self.arm.set_position(*[0.0, 0.0, 75.4, 180.0, 0.0, 0.0], wait=True)
-        time.sleep(1)
+        # self.get_logger().info("Moving to canvas...")
+        # self.arm.set_position(*[0.0, 0.0, 75.4, 180.0, 0.0, 0.0], wait=True)
+        # time.sleep(1)
 
-        # set cartesian velocity control mode
-        self.get_logger().info("Switching to velocity control mode!")
-        self.arm.set_mode(5)
-        self.arm.set_state(0)
-        time.sleep(1)
+        # # set cartesian velocity control mode
+        # self.get_logger().info("Switching to velocity control mode!")
+        # self.arm.set_mode(5)
+        # self.arm.set_state(0)
+        # time.sleep(1)
 
-        self.get_logger().info("I'm ready to go!")
+        # self.get_logger().info("I'm ready to go!")
 
     def good_night_robot(self):
         self.arm.set_mode(0)
