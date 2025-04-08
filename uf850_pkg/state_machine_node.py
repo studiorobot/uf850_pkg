@@ -35,6 +35,20 @@ class IdleState():
         self.node.get_logger().info("Current State: IDLE")
         self.node.get_logger().info("")
 
+        if self.node._eef_state is not None:
+            self.node.get_logger().info("Aligning Axis ...")
+            self.node.arm.set_mode(0)
+            self.node.arm.set_state(state=0)
+            time.sleep(1)
+
+            self.node.arm.set_position(*[self.node.eef_x, self.node.eef_y, self.node.eef_z, 180, 0, 0], wait=True)
+            
+            # set cartesian velocity control mode
+            self.node.get_logger().info("Switching to velocity control mode!")
+            self.node.arm.set_mode(5)
+            self.node.arm.set_state(0)
+            time.sleep(1)
+
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
             rclpy.spin_once(self.node, timeout_sec=0.1)
         return self.node.requested_state or self.next_state
@@ -67,7 +81,7 @@ class MoveState():
     def __init__(self,node):
         self.node = node #state machine node, sharing with other class
         self.next_state = None
-        self.timeout_duration = 1.5  # Timeout in seconds for inactivity
+        self.timeout_duration = 5.0  # Timeout in seconds for inactivity
         self.last_activity = time.time()
 
 
@@ -78,20 +92,49 @@ class MoveState():
 
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
             rclpy.spin_once(self.node, timeout_sec=0.1)
-
-            if self.node.is_joystick_active():
+            
+            if self.node.is_joystick_active() and self.node._eef_state is not None:
                 self.last_activity = time.time()
                 # Perform movement logic (e.g., send velocity commands)
-                self.node.get_logger().info(f"Moving robot: X={self.node.LEFT_STICK_LR}, Y={self.node.LEFT_STICK_FB}")
-                self.node.get_logger().info(f"Moving robot: RX={self.node.RIGHT_STICK_LR}, RY={self.node.RIGHT_STICK_FB}")
-                self.node.get_logger().info(f"Moving robot: UP={self.node.LEFT_TRIGGER}, RY={self.node.RIGHT_TRIGGER}")
-                self.node.get_logger().info("")
+                # Declare some useful parameters:
+                linear_speed = 25
+                angular_speed = 10
 
-                # TODO: Add movement logic (e.g., publishing Twist messages)
+                ########################## MAPPING LINEAR MOVEMENT #################################
+
+                vx = (self.node.LEFT_STICK_LR) * linear_speed
+                vy = - (self.node.LEFT_STICK_FB) * linear_speed
+
+                z_max = 10
+                z_0 = z_max + 40
+                if self.node.RIGHT_TRIGGER == 1:              # NOT Pressed
+                    if abs(self.node.eef_z - z_0) < 0.1:
+                        vz = 0
+                    else:   # GO UP
+                        vz = np.clip((z_0 - self.node.eef_z), -200, 200)
+                else:
+                    if abs(self.node.eef_z - z_max) < 0.1:
+                        vz = 0
+                    else:   # GO DOWN
+                        vz = np.clip((self.node.RIGHT_TRIGGER - 1) * (self.node.eef_z - z_max), -50, 50)
+
+
+                ########################## MAPPING ORIENTATION #################################
+                wx = self.node.RIGHT_STICK_FB * angular_speed
+                wy = self.node.RIGHT_STICK_LR * angular_speed
+
+                wz = (self.node.BTN_LB - self.node.BTN_RB) * angular_speed  # Yaw (LB/RB buttons)
+
+                self.node.arm.vc_set_cartesian_velocity([vx, vy, vz, wx, wy, wz])
+
+            else:
+                self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+
 
             # Check for inactivity timeout
-            elif time.time() - self.last_activity > self.timeout_duration:
+            if time.time() - self.last_activity > self.timeout_duration:
                 self.node.get_logger().info("No input detected, transitioning to IDLE")
+                self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
                 return 'IDLE'
 
         return self.node.requested_state
@@ -174,6 +217,7 @@ class StateMachineNode(Node):
 
         self.current_state = 'CHANGE PAINT'
         self.is_already_in_canvas_frame = False
+        self._eef_state = None
 
     def switch_frame(self, to_canvas):
         self.arm.set_mode(0)
@@ -231,23 +275,16 @@ class StateMachineNode(Node):
         # self.arm.set_position(*[-self.x_offset, 0.0, 600, -(self.rx_offset - 180) , self.ry_offset, self.rz_offset], wait=True)
         # time.sleep(1)
 
-        self.switch_frame(to_canvas=False)
+        self.get_logger().info("Offseting world frame to canvas...")
+        # self.switch_frame(to_canvas=False)
         self.switch_frame(to_canvas=True)
 
+        self.get_logger().info("Moving to canvas...")
         self.arm.set_position(*[0.0, 0.0, 75.4, 180.0, 0.0, 0.0], wait=True)
         time.sleep(1)
 
-        # Initialize Current position and orientation of the arm
-        failure, current_pose = self.arm.get_position()
-        current_pose = np.round(current_pose, decimals=2)
-        self.curr_x, self.curr_y, self.curr_z, self.curr_roll, self.curr_pitch, self.curr_yaw = current_pose
-        
-        if failure:
-            self.get_logger().error("Failed to get current pose from xArm.")
-            return
-
         # set cartesian velocity control mode
-        self.get_logger().info("Switching mode!")
+        self.get_logger().info("Switching to velocity control mode!")
         self.arm.set_mode(5)
         self.arm.set_state(0)
         time.sleep(1)
@@ -306,18 +343,17 @@ class StateMachineNode(Node):
     
         # Get current joint state from the arm
         failure, end_effector_pose = self.arm.get_position()
-        x, y, z, roll, pitch, yaw = end_effector_pose
+        self.eef_x, self.eef_y, self.eef_z, self.eef_rx, self.eef_ry, self.eef_rz = end_effector_pose
 
-
-        eef_pose_msg.pose.position.x = x
-        eef_pose_msg.pose.position.y = y
-        eef_pose_msg.pose.position.z = z
+        eef_pose_msg.pose.position.x = self.eef_x
+        eef_pose_msg.pose.position.y = self.eef_y
+        eef_pose_msg.pose.position.z = self.eef_z
 
         # eef_pose_msg.pose.orientation.x = roll
         # eef_pose_msg.pose.orientation.y = pitch
         # eef_pose_msg.pose.orientation.z = yaw
 
-        qx, qy, qz, qw = get_quaternion_from_euler(roll, pitch, yaw)
+        qx, qy, qz, qw = get_quaternion_from_euler(self.eef_rx, self.eef_ry, self.eef_rz)
         eef_pose_msg.pose.orientation.x = qx
         eef_pose_msg.pose.orientation.y = qy
         eef_pose_msg.pose.orientation.z = qz
@@ -325,6 +361,8 @@ class StateMachineNode(Node):
 
         # Publish the message
         self.eef_pose_pub.publish(eef_pose_msg)
+
+        self._eef_state = 0
 
         if failure:
             self.get_logger().error("Failed to get end effector pose from UF850.")
