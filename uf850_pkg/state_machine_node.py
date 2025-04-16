@@ -13,6 +13,7 @@ import json
 from ament_index_python.packages import get_package_share_directory
 import os
 from xarm.wrapper import XArmAPI
+from std_msgs.msg import String
 
 ##########################################################
 #################### Copyright 2025 ######################
@@ -54,6 +55,13 @@ class IdleState():
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
             rclpy.spin_once(self.node, timeout_sec=0.1)
         return self.node.requested_state or self.next_state
+    
+    def on_text_received(self,msg):
+        self.node.get_logger().info(f'IdleState Voice Commmand received;  {msg.data}')
+        if msg.data == 'draw':
+            self.node.requested_state = 'PAINTING'
+        elif msg.data == 'ChangePaint':
+            self.node.requested_state = 'CHANGE PAINT'
     
 class GoHomeState():
     """
@@ -125,6 +133,14 @@ class MoveState():
                 return 'IDLE'
 
         return self.node.requested_state
+    
+    def on_text_received(self,msg):
+        self.node.get_logger().info(f'MoveState Voice Commmand received;  {msg.data}')
+        if msg.data == 'draw':
+            self.node.requested_state = 'PAINTING'
+        elif msg.data == 'ChangePaint':
+            self.node.requested_state = 'CHANGE PAINT'
+                                    
     
     def velocity_control_canvas(self):
         if self.node.is_joystick_active() and self.node._eef_state is not None:
@@ -253,6 +269,7 @@ class StateMachineNode(Node):
         
         # Create a subscription for joystick
         self.joy_sub = self.create_subscription(Joy, "/joy", self.joystick_callback, 10)
+        self.voice_sub = self.create_subscription(String, 'voice_text', self.on_text_received, 10)
 
         self.prev_btn_y = 0  # Track previous button state
         self.prev_btn_b = 0  # Track previous button state
@@ -524,6 +541,11 @@ class StateMachineNode(Node):
             self.requested_state = 'MOVE'
         
         #=============================================================
+
+    def on_text_received(self, msg):
+        state_instance = self.states[self.current_state]
+        state_instance.on_text_received(msg)
+        #self.get_logger().info(f'data received')
 
     def run(self):
         try:

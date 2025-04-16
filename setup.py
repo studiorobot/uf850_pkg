@@ -27,6 +27,7 @@ setup(
             'uf850_node = uf850_pkg.uf850_node:main',
             'joy2uf850_node = uf850_pkg.joy2uf850_node:main',
             'state_machine_node = uf850_pkg.state_machine_node:main',
+            'voice_node = voice_pkg.transcribe:main',
         ],
     },
 )
