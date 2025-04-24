@@ -90,7 +90,6 @@ class GoHomeState():
         self.node.arm.set_mode(0)
         self.node.arm.set_state(state=0)
         time.sleep(1)
-
         if to_canvas:
             self.node.arm.set_position(*[0.0, 0.0, 75.4, 180, 0, 0], wait=True)
         else:
@@ -290,19 +289,20 @@ class StateMachineNode(Node):
     def switch_frame(self, to_canvas):
         self.arm.set_mode(0)
         self.arm.set_state(state=0)
-        time.sleep(1)
+        time.sleep(0.1)
 
         self.arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0], wait=True)
-        time.sleep(1)
+        time.sleep(0.1)
 
         if to_canvas:
             # Offset World
             self.arm.set_world_offset([self.x_offset, self.y_offset, self.z_offset, self.rx_offset, self.ry_offset, self.rz_offset], wait=True)
-            time.sleep(1)
+            time.sleep(0.1)
 
         self.arm.set_mode(0)
         self.arm.set_state(state=0)
-        time.sleep(1)
+        time.sleep(0.1)
+        
 
     def good_morning_robot(self):
         self.get_logger().info("I'm waking up...")
