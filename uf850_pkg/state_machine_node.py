@@ -3,7 +3,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from sensor_msgs.msg import Joy
-from geometry_msgs.msg import TwistStamped, PoseStamped
+from geometry_msgs.msg import TwistStamped, PoseStamped, Pose, PoseArray
 from std_msgs.msg import Header, Bool
 import numpy as np
 from sensor_msgs.msg import JointState
@@ -13,6 +13,7 @@ import json
 from ament_index_python.packages import get_package_share_directory
 import os
 from xarm.wrapper import XArmAPI
+import math
 
 ##########################################################
 #################### Copyright 2025 ######################
@@ -233,7 +234,122 @@ class ChangePaintState():
             rclpy.spin_once(self.node, timeout_sec=0.1)
         
         return self.node.requested_state or self.next_state
+
+
+class PlanState():
+    """
+    Receive biometric inputs, voice inputs, and CoFRIDA strokes and execute them
+    """
+    def __init__(self,node):
+        self.node = node #state machine node, sharing with other class
+        self.next_state = None
+        self.timeout_duration = 10.0  # Timeout in seconds for inactivity
+        self.last_activity = time.time()
+
+    def execute(self):
+        self.next_state = None
+        self.node.get_logger().info("Current State: PLAN")
+        self.last_activity_time = time.time()  # Reset on entry
+
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+            # TODO: modify this section!!
+            if self.node.is_already_in_canvas_frame:
+                # basically just execute the stroke?
+                self.go_to_cartesian_pose()
+            else:
+                self.node.get_logger().info("PLAN STATE - ERROR: robot is not in canvas frame!")
+
+            # Check for inactivity timeout
+            if time.time() - self.last_activity > self.timeout_duration:
+                self.node.get_logger().info("No input detected, transitioning to IDLE")
+                self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                return 'IDLE'
+
+        return self.node.requested_state
     
+    def go_to_cartesian_pose(self, positions, orientations,
+            speed=50):
+        # positions in meters
+        for waypoint in self.node.next_stroke:
+            positions = waypoint.position
+            orientations = waypoint.orientation
+            positions, orientations = np.array(positions), np.array(orientations)
+
+        if len(positions.shape) == 1:
+            positions = positions[None,:]
+            orientations = orientations[None,:]
+        for waypoint in self.node.next_stroke:
+            position = waypoint.position
+            orientation = waypoint.orientation
+            # ------
+            print("going to position: ", position)
+            x,y,z = positions.x, positions.y, positions.z # i changed x and y index 0 1
+            x,y,z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
+            # q = orientations[i]
+            
+            euler= self.euler_from_quaternion(orientation.x, orientation.y, orientation.z, orientation.w) #quaternion.as_quat_array(orientations[i])
+            roll, pitch, yaw = 180, 0, 0 #euler[0], euler[1], euler[2]
+            # https://github.com/xArm-Developer/xArm-Python-SDK/blob/0fd107977ee9e66b6841ea9108583398a01f227b/xarm/x3/xarm.py#L214
+            
+            wait = True 
+            failure, state = self.arm.get_position()
+            if not failure:
+                curr_x, curr_y, curr_z = state[0], state[1], state[2]
+                # print('curr', curr_y, y)
+                dist = ((x-curr_x)**2 + (y-curr_y)**2 + (z-curr_z)**2)**0.5
+                # print('dist', dist)
+                # Dist in mm
+                if dist < 5:
+                    wait=False
+                    speed=100
+                    # print('less')
+
+            try:
+                r = self.arm.set_position(
+                        x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw,
+                        speed=speed, wait=wait
+                )
+                print("x y z: ",x, y, z)
+                if r:
+                    print("failed to go to pose, resetting.")
+                    self.arm.clean_error()
+                    self.good_morning_robot()
+                    self.arm.set_position(
+                            x=x, y=y, z=z+5, roll=roll, pitch=pitch, yaw=yaw,
+                            speed=speed, wait=True
+                    )
+                    self.arm.set_position(
+                            x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw,
+                            speed=speed, wait=True
+                    )
+            except Exception as e:
+                self.good_morning_robot()
+                print('Cannot go to position', e)
+
+    def euler_from_quaternion(x, y, z, w):
+        """
+        Convert a quaternion into euler angles (roll, pitch, yaw)
+        roll is rotation around x in radians (counterclockwise)
+        pitch is rotation around y in radians (counterclockwise)
+        yaw is rotation around z in radians (counterclockwise)
+        """
+        t0 = +2.0 * (w * x + y * z)
+        t1 = +1.0 - 2.0 * (x * x + y * y)
+        roll_x = math.atan2(t0, t1)
+
+        t2 = +2.0 * (w * y - z * x)
+        t2 = +1.0 if t2 > +1.0 else t2
+        t2 = -1.0 if t2 < -1.0 else t2
+        pitch_y = math.asin(t2)
+
+        t3 = +2.0 * (w * z + x * y)
+        t4 = +1.0 - 2.0 * (y * y + z * z)
+        yaw_z = math.atan2(t3, t4)
+
+        return roll_x, pitch_y, yaw_z # in radians
+
 class StateMachineNode(Node):
     def __init__(self, ip):
         super().__init__('state_machine_node')
@@ -254,16 +370,21 @@ class StateMachineNode(Node):
         # Create a subscription for joystick
         self.joy_sub = self.create_subscription(Joy, "/joy", self.joystick_callback, 10)
 
+        # Create a subscription for CoFRIDA
+        self.cofrida_sub = self.create_subscription(PoseArray, "/frida_stroke_vec", self.cofrida_callback, 10)
+        self.next_stroke = None # Track next requested stroke
+
         self.prev_btn_y = 0  # Track previous button state
         self.prev_btn_b = 0  # Track previous button state
         self.requested_state = None
 
         self.states = {
             'IDLE': IdleState(self),
-            'PAINTING': PaintingState(self),
-            'MOVE': MoveState(self),
-            'CHANGE PAINT': ChangePaintState(self),
-            'GO HOME': GoHomeState(self),
+            'PAINTING': PaintingState(self),        # move to vertical canvas coords
+            'MOVE': MoveState(self),                # move based on joystick control
+            'CHANGE PAINT': ChangePaintState(self), # move to flat canvas coords
+            'GO HOME': GoHomeState(self),           # return to home position
+            'PLAN': PlanState(self),                # execute cofrida plans
         }
 
         self.current_state = 'CHANGE PAINT'
@@ -524,6 +645,14 @@ class StateMachineNode(Node):
             self.requested_state = 'MOVE'
         
         #=============================================================
+
+    def cofrida_callback(self, msg: PoseArray):
+        # given the pose array of a stroke (consisting of a few waypoints), execute those waypoints in canvas frame then return to the idle state
+        self.requested_state = 'PAINTING'   # move to canvas frame
+        self.next_stroke = msg.poses        # put requested stroke in next_stroke for planning state to use
+        self.requested_state = 'PLAN'       # go to planning state
+        
+
 
     def run(self):
         try:
