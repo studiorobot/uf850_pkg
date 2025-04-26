@@ -254,47 +254,58 @@ class PlanState():
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
+            # Switch to canvas frame
+            self.node.switch_frame(to_canvas=True)
+            self.node.is_already_in_canvas_frame = True
+
             # TODO: modify this section!!
+            self.node.get_logger().info("hello there")
             if self.node.is_already_in_canvas_frame:
                 # basically just execute the stroke?
+                self.node.get_logger().info("hi there")
                 self.go_to_cartesian_pose()
+                self.node.get_logger().info("finished cartesian pose")
+                self.next_state = "GO HOME" #after finished stroke, return to idle state
             else:
                 self.node.get_logger().info("PLAN STATE - ERROR: robot is not in canvas frame!")
-
+            self.node.get_logger().info("finished this if thing")
             # Check for inactivity timeout
             if time.time() - self.last_activity > self.timeout_duration:
                 self.node.get_logger().info("No input detected, transitioning to IDLE")
                 self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                return 'IDLE'
+                return 'GO HOME'
 
         return self.node.requested_state
     
-    def go_to_cartesian_pose(self, positions, orientations,
-            speed=50):
+    def go_to_cartesian_pose(self): #self, positions, orientations, speed=50
         # positions in meters
-        for waypoint in self.node.next_stroke:
-            positions = waypoint.position
-            orientations = waypoint.orientation
-            positions, orientations = np.array(positions), np.array(orientations)
+        # for waypoint in self.node.next_stroke:
+        #     positions = waypoint.position
+        #     orientations = waypoint.orientation
+        #     positions, orientations = np.array(positions), np.array(orientations)
 
-        if len(positions.shape) == 1:
-            positions = positions[None,:]
-            orientations = orientations[None,:]
-        for waypoint in self.node.next_stroke:
-            position = waypoint.position
-            orientation = waypoint.orientation
+        # if len(positions.shape) == 1:
+        #     positions = positions[None,:]
+        #     orientations = orientations[None,:]
+        self.node.get_logger().info("HELLLLLLLLLLOOOOOOOOOOO")
+        for pose in self.node.next_stroke:
+            position = pose.position
+            orientation = pose.orientation
             # ------
-            print("going to position: ", position)
-            x,y,z = positions.x, positions.y, positions.z # i changed x and y index 0 1
+            x,y,z = position.y, position.x, position.z # i changed x and y index 0 1
             x,y,z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
             # q = orientations[i]
-            
-            euler= self.euler_from_quaternion(orientation.x, orientation.y, orientation.z, orientation.w) #quaternion.as_quat_array(orientations[i])
+            self.node.get_logger().info("going to position x %f, y %f" % (x, y))
+
+
+            # euler= self.euler_from_quaternion(orientation.x, orientation.y, orientation.z, orientation.w) #quaternion.as_quat_array(orientations[i])
             roll, pitch, yaw = 180, 0, 0 #euler[0], euler[1], euler[2]
             # https://github.com/xArm-Developer/xArm-Python-SDK/blob/0fd107977ee9e66b6841ea9108583398a01f227b/xarm/x3/xarm.py#L214
             
             wait = True 
-            failure, state = self.arm.get_position()
+            failure, state = self.node.arm.get_position()
+            self.node.get_logger().info("get arm position: failure %f" % (failure))
+
             if not failure:
                 curr_x, curr_y, curr_z = state[0], state[1], state[2]
                 # print('curr', curr_y, y)
@@ -306,23 +317,29 @@ class PlanState():
                     speed=100
                     # print('less')
 
+            # self.node.get_logger().info("entering try")
+
             try:
-                r = self.arm.set_position(
-                        x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw,
-                        speed=speed, wait=wait
-                )
-                print("x y z: ",x, y, z)
+                self.node.get_logger().info("try")
+                r = self.node.arm.set_position(*[x, y, z, roll, pitch, yaw], wait=wait)
+                self.node.get_logger().info("set position")
                 if r:
-                    print("failed to go to pose, resetting.")
-                    self.arm.clean_error()
+                    self.node.get_logger().info("failed to go to pose, resetting.")
+                    self.node.arm.clean_error()
                     self.good_morning_robot()
-                    self.arm.set_position(
-                            x=x, y=y, z=z+5, roll=roll, pitch=pitch, yaw=yaw,
-                            speed=speed, wait=True
+                    # self.node.arm.set_position(
+                    #         x=x, y=y, z=z+5, roll=roll, pitch=pitch, yaw=yaw,
+                    #         speed=speed, wait=True
+                    # )
+                    self.node.arm.set_position(
+                            *[x, y, z+5, roll, pitch, yaw], wait=True
                     )
-                    self.arm.set_position(
-                            x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw,
-                            speed=speed, wait=True
+                    # self.node.arm.set_position(
+                    #         x=x, y=y, z=z, roll=roll, pitch=pitch, yaw=yaw,
+                    #         speed=speed, wait=True
+                    # )
+                    self.node.arm.set_position(
+                        *[x, y, z, roll, pitch, yaw], wait=wait
                     )
             except Exception as e:
                 self.good_morning_robot()
@@ -349,6 +366,51 @@ class PlanState():
         yaw_z = math.atan2(t3, t4)
 
         return roll_x, pitch_y, yaw_z # in radians
+
+
+    def good_morning_robot(self):
+        # self.node.arm.set_tcp_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        # self.node.arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        print("good_morning_robot in plan state")
+        self.node.arm.motion_enable(enable=True)
+        self.node.arm.reset(wait=True)
+        self.node.arm.set_mode(0)
+        self.node.arm.reset(wait=True)
+        self.node.arm.set_state(state=0)
+
+        self.node.arm.reset(wait=True)
+
+
+    # def good_night_robot(self):
+    #     self.node.arm.set_tcp_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    #     self.node.arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+    #     self.node.arm.disconnect()
+
+
+class RefreshPaintState():
+    """
+    Rinse and get new paint
+    """
+    def __init__(self,node):
+        self.node = node #state machine node, sharing with other class
+        self.next_state = None
+
+    def execute(self):
+
+        self.node.get_logger().info("Current State: CHANGE PAINT")
+        self.node.get_logger().info("Switched to Palette Coord")
+        
+        self.node.switch_frame(to_canvas=False)
+        self.node.is_already_in_canvas_frame = False
+        
+        # TODO: insert logic to go to water location, rag location, paint location
+        
+        self.next_state = "GO HOME"
+
+        while rclpy.ok() and self.next_state is None and not self.node.requested_state:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        
+        return self.node.requested_state or self.next_state
 
 class StateMachineNode(Node):
     def __init__(self, ip):
@@ -378,13 +440,16 @@ class StateMachineNode(Node):
         self.prev_btn_b = 0  # Track previous button state
         self.requested_state = None
 
+        self.stroke_count = 0 # keep track of strokes until need to refresh the paint
+
         self.states = {
             'IDLE': IdleState(self),
-            'PAINTING': PaintingState(self),        # move to vertical canvas coords
-            'MOVE': MoveState(self),                # move based on joystick control
-            'CHANGE PAINT': ChangePaintState(self), # move to flat canvas coords
-            'GO HOME': GoHomeState(self),           # return to home position
-            'PLAN': PlanState(self),                # execute cofrida plans
+            'PAINTING': PaintingState(self),            # move to vertical canvas coords
+            'MOVE': MoveState(self),                    # move based on joystick control
+            'CHANGE PAINT': ChangePaintState(self),     # move to flat canvas coords
+            'GO HOME': GoHomeState(self),               # return to home position
+            'PLAN': PlanState(self),                    # execute cofrida plans
+            'REFRESH PAINT': RefreshPaintState(self)    # rinse and get more paint
         }
 
         self.current_state = 'CHANGE PAINT'
@@ -648,7 +713,7 @@ class StateMachineNode(Node):
 
     def cofrida_callback(self, msg: PoseArray):
         # given the pose array of a stroke (consisting of a few waypoints), execute those waypoints in canvas frame then return to the idle state
-        self.requested_state = 'PAINTING'   # move to canvas frame
+        # self.requested_state = 'PAINTING'   # move to canvas frame
         self.next_stroke = msg.poses        # put requested stroke in next_stroke for planning state to use
         self.requested_state = 'PLAN'       # go to planning state
         
