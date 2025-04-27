@@ -63,6 +63,7 @@ class IdleState():
             self.node.requested_state = 'PAINTING'
         elif msg.data == 'ChangePaint':
             self.node.requested_state = 'CHANGE PAINT'
+        
     
 class GoHomeState():
     """
@@ -260,6 +261,7 @@ class PlanState():
         self.next_state = None
         self.timeout_duration = 10.0  # Timeout in seconds for inactivity
         self.last_activity = time.time()
+        self.pause = False
 
     def execute(self):
         self.next_state = None
@@ -276,6 +278,11 @@ class PlanState():
             # TODO: modify this section!!
             self.node.get_logger().info("hello there")
             if not self.node.is_already_in_canvas_frame:
+
+                
+
+                    
+
                 # basically just execute the stroke?
                 self.node.get_logger().info("hi there")
                 self.go_to_cartesian_pose()
@@ -292,6 +299,17 @@ class PlanState():
 
         return self.node.requested_state
     
+    def on_text_received(self,msg):
+        self.node.get_logger().info(f'PlanState Voice Commmand received;  {msg.data}')
+        if msg.data == 'draw':
+            self.node.requested_state = 'PAINTING'
+        elif msg.data == 'ChangePaint':
+            self.node.requested_state = 'CHANGE PAINT'
+        elif msg.data == 'stop':
+            self.node.get_logger().info("set pause to be ture")
+            self.pause = True
+
+    
     def go_to_cartesian_pose(self): #self, positions, orientations, speed=50
         # positions in meters
         # for waypoint in self.node.next_stroke:
@@ -304,6 +322,14 @@ class PlanState():
         #     orientations = orientations[None,:]
         self.node.get_logger().info("HELLLLLLLLLLOOOOOOOOOOO")
         for pose in self.node.next_stroke:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+
+            if self.pause == True:
+                    self.node.get_logger().info("stop command received")
+                    self.pause = False
+                    self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                    break
+            
             position = pose.position
             orientation = pose.orientation
             # ------
