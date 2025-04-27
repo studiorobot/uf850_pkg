@@ -255,19 +255,19 @@ class PlanState():
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
             # Switch to canvas frame
-            self.node.switch_frame(to_canvas=True)
-            self.node.is_already_in_canvas_frame = True
+            self.node.switch_frame(to_canvas=False)
+            self.node.is_already_in_canvas_frame = False
 
             # TODO: modify this section!!
             self.node.get_logger().info("hello there")
-            if self.node.is_already_in_canvas_frame:
+            if not self.node.is_already_in_canvas_frame:
                 # basically just execute the stroke?
                 self.node.get_logger().info("hi there")
                 self.go_to_cartesian_pose()
                 self.node.get_logger().info("finished cartesian pose")
                 self.next_state = "GO HOME" #after finished stroke, return to idle state
             else:
-                self.node.get_logger().info("PLAN STATE - ERROR: robot is not in canvas frame!")
+                self.node.get_logger().info("PLAN STATE - ERROR: robot is not in palette frame!")
             self.node.get_logger().info("finished this if thing")
             # Check for inactivity timeout
             if time.time() - self.last_activity > self.timeout_duration:
@@ -292,7 +292,7 @@ class PlanState():
             position = pose.position
             orientation = pose.orientation
             # ------
-            x,y,z = position.y, position.x, position.z # i changed x and y index 0 1
+            x,y,z = position.x, position.y, position.z # i changed x and y index 0 1
             x,y,z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
             # q = orientations[i]
             self.node.get_logger().info("going to position x %f, y %f" % (x, y))
