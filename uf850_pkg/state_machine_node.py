@@ -333,7 +333,7 @@ class PlanState():
             position = pose.position
             orientation = pose.orientation
             # ------
-            x,y,z = position.x, position.y, position.z # i changed x and y index 0 1
+            x,y,z = position.y, position.x, position.z # i changed x and y index 0 1
             x,y,z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
             # q = orientations[i]
             self.node.get_logger().info("going to position x %f, y %f" % (x, y))
@@ -359,6 +359,9 @@ class PlanState():
                     # print('less')
 
             # self.node.get_logger().info("entering try")
+
+            self.node.arm.set_mode(0)
+            self.node.arm.set_state(state=0)
 
             try:
                 self.node.get_logger().info("try")
