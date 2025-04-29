@@ -4,7 +4,7 @@ from rclpy.node import Node
 from rclpy.executors import MultiThreadedExecutor
 from sensor_msgs.msg import Joy
 from geometry_msgs.msg import TwistStamped, PoseStamped, Pose, PoseArray
-from std_msgs.msg import Header, Bool
+from std_msgs.msg import Header, Bool, Int8
 import numpy as np
 from sensor_msgs.msg import JointState
 import time
@@ -279,18 +279,19 @@ class PlanState():
             self.node.get_logger().info("hello there")
             if not self.node.is_already_in_canvas_frame:
 
-                
-
-                    
-
+                if self.node.arousal_state == 1:
+                    # random chance to continue or not? im not sure
+                    if np.random.rand() > 0:
+                        self.node.get_logger().info("Arousal state = 1, SKIP stroke")
+                        return 'GO HOME'
+                    else:
+                        self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
                 # basically just execute the stroke?
-                self.node.get_logger().info("hi there")
                 self.go_to_cartesian_pose()
                 self.node.get_logger().info("finished cartesian pose")
                 self.next_state = "GO HOME" #after finished stroke, return to idle state
             else:
                 self.node.get_logger().info("PLAN STATE - ERROR: robot is not in palette frame!")
-            self.node.get_logger().info("finished this if thing")
             # Check for inactivity timeout
             if time.time() - self.last_activity > self.timeout_duration:
                 self.node.get_logger().info("No input detected, transitioning to IDLE")
@@ -320,7 +321,7 @@ class PlanState():
         # if len(positions.shape) == 1:
         #     positions = positions[None,:]
         #     orientations = orientations[None,:]
-        self.node.get_logger().info("HELLLLLLLLLLOOOOOOOOOOO")
+        self.node.get_logger().info("starting paint strokes")
         for pose in self.node.next_stroke:
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
@@ -345,7 +346,7 @@ class PlanState():
             
             wait = True 
             failure, state = self.node.arm.get_position()
-            self.node.get_logger().info("get arm position: failure %f" % (failure))
+            # self.node.get_logger().info("get arm position: failure %f" % (failure))
 
             if not failure:
                 curr_x, curr_y, curr_z = state[0], state[1], state[2]
@@ -364,9 +365,10 @@ class PlanState():
             self.node.arm.set_state(state=0)
 
             try:
-                self.node.get_logger().info("try")
+                # self.node.get_logger().info("try")
                 r = self.node.arm.set_position(*[x, y, z, roll, pitch, yaw], wait=wait)
-                self.node.get_logger().info("set position")
+
+                # self.node.get_logger().info("set position")
                 if r:
                     self.node.get_logger().info("failed to go to pose, resetting.")
                     self.node.arm.clean_error()
@@ -475,7 +477,13 @@ class StateMachineNode(Node):
         
         # Create a subscription for joystick
         self.joy_sub = self.create_subscription(Joy, "/joy", self.joystick_callback, 10)
+
+        # Create a subscription for voice
         self.voice_sub = self.create_subscription(String, 'voice_text', self.on_text_received, 10)
+
+        # Create a subscription for biometric
+        self.biometric_sub = self.create_subscription(Int8, 'arousal_label', self.biometric_callback, 10)
+        self.arousal_state = False
 
         # Create a subscription for CoFRIDA
         self.cofrida_sub = self.create_subscription(PoseArray, "/frida_stroke_vec", self.cofrida_callback, 10)
@@ -531,7 +539,7 @@ class StateMachineNode(Node):
         self.arm.set_position(*[180.0, 0.0, 500.0, 180, 0, 0], wait=True)
 
         # Offset Eef taken brush into account
-        self.arm.set_tcp_offset([0.0, 0.0, 110.0, 0.0, 0.0, 0.0], wait=True)
+        # self.arm.set_tcp_offset([0.0, 0.0, 110.0, 0.0, 0.0, 0.0], wait=True)
 
         # Read from JSON to get offset
         package_share_dir = get_package_share_directory('uf850_pkg')
@@ -761,6 +769,14 @@ class StateMachineNode(Node):
         state_instance = self.states[self.current_state]
         state_instance.on_text_received(msg)
         #self.get_logger().info(f'data received')
+
+    def biometric_callback(self, msg: Int8):
+        if msg.data == 1:
+            self.get_logger().info("received arousal = 1")
+            self.arousal_state = True
+        else:
+            self.arousal_state = False
+
 
     def cofrida_callback(self, msg: PoseArray):
         # given the pose array of a stroke (consisting of a few waypoints), execute those waypoints in canvas frame then return to the idle state
