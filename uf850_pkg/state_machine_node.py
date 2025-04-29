@@ -288,11 +288,6 @@ class PlanState():
                     else:
                         self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
 
-                self.node.get_logger().info("current depth is : %f" % (self.node.depth))
-                if self.node.depth <= self.node.initial_depth: # person in canvas
-                    self.node.get_logger().info("Canvas Occupied, SKIP stroke: %f" % (self.node.initial_depth))
-                    return 'GO HOME'
-
                 # basically just execute the stroke?
                 self.go_to_cartesian_pose()
                 self.node.get_logger().info("finished cartesian pose")
