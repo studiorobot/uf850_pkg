@@ -13,7 +13,7 @@ import json
 from ament_index_python.packages import get_package_share_directory
 import os
 from xarm.wrapper import XArmAPI
-from std_msgs.msg import String
+from std_msgs.msg import String, Float32
 import math
 
 ##########################################################
@@ -279,13 +279,20 @@ class PlanState():
             self.node.get_logger().info("hello there")
             if not self.node.is_already_in_canvas_frame:
 
-                if self.node.arousal_state == 1:
+                if self.node.arousal_state == 1: # person has elevated heartrate
                     # random chance to continue or not? im not sure
-                    if np.random.rand() > 0:
+                    if np.random.rand() > 0: # TODO: Change this threshold to be in the options.json as a parameter!
+                        # currently always goes home when arousal state = 1
                         self.node.get_logger().info("Arousal state = 1, SKIP stroke")
                         return 'GO HOME'
                     else:
                         self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
+
+                self.node.get_logger().info("current depth is : %f" % (self.node.depth))
+                if self.node.depth <= self.node.initial_depth: # person in canvas
+                    self.node.get_logger().info("Canvas Occupied, SKIP stroke: %f" % (self.node.initial_depth))
+                    return 'GO HOME'
+
                 # basically just execute the stroke?
                 self.go_to_cartesian_pose()
                 self.node.get_logger().info("finished cartesian pose")
@@ -326,10 +333,15 @@ class PlanState():
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
             if self.pause == True:
-                    self.node.get_logger().info("stop command received")
-                    self.pause = False
-                    self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                    break
+                self.node.get_logger().info("stop command received")
+                self.pause = False
+                self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                break
+        
+            self.node.get_logger().info("current depth is : %f" % (self.node.depth))
+            if self.node.depth <= self.node.initial_depth: # person in canvas
+                self.node.get_logger().info("Canvas Occupied, SKIP stroke: %f" % (self.node.initial_depth))
+                break
             
             position = pose.position
             orientation = pose.orientation
@@ -484,6 +496,12 @@ class StateMachineNode(Node):
         # Create a subscription for biometric
         self.biometric_sub = self.create_subscription(Int8, 'arousal_label', self.biometric_callback, 10)
         self.arousal_state = False
+
+        # Create a subscription for depth camera
+        self.cofrida_sub = self.create_subscription(Float32, '/object_depth', self.depth_callback, 10)
+        self.initial_depth = 0.0
+        self.depth_count = 0
+        self.depth = 100.0 # Track next requested stroke
 
         # Create a subscription for CoFRIDA
         self.cofrida_sub = self.create_subscription(PoseArray, "/frida_stroke_vec", self.cofrida_callback, 10)
@@ -777,6 +795,15 @@ class StateMachineNode(Node):
         else:
             self.arousal_state = False
 
+    def depth_callback(self, msg: Float32):
+        self.depth_count += 1
+        if self.depth_count < 10:
+            self.initial_depth += msg.data
+        if self.depth_count == 10:
+            self.initial_depth = self.initial_depth / 10.0
+            self.get_logger().info("SETTING INITIAL DEPTH %f" % (self.initial_depth))
+        self.get_logger().info(f'Depth received: {msg.data}', throttle_duration_sec=2)
+        self.depth = msg.data
 
     def cofrida_callback(self, msg: PoseArray):
         # given the pose array of a stroke (consisting of a few waypoints), execute those waypoints in canvas frame then return to the idle state
