@@ -93,7 +93,7 @@ class GoHomeState():
         self.node.arm.set_state(state=0)
         time.sleep(1)
         if to_canvas:
-            self.node.arm.set_position(*[0.0, 0.0, 75.4, 180, 0, 0], wait=True)
+            self.node.arm.set_position(*[0.0, 0.0, 150, 180, 0, 0], wait=True)
         else:
             self.node.arm.set_position(*[160.0, 160.0, 340.0, 180, 0, 0], wait=True)
         
@@ -289,20 +289,20 @@ class PlanState():
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
             # Switch to canvas frame
-            self.node.switch_frame(to_canvas=False)
-            self.node.is_already_in_canvas_frame = False
+            self.node.switch_frame(to_canvas=True)
+            self.node.is_already_in_canvas_frame = True
 
             # TODO: modify this section!!
             self.node.get_logger().info("hello there")
-            if not self.node.is_already_in_canvas_frame:
+            if self.node.is_already_in_canvas_frame:
 
-                if self.node.arousal_state > 0.5: # person has elevated heartrate
-                    # slow down speed of robot until arousal_state >= 0.5
-                    adjust_speed_based_on_arousal(self.node.arousal_state)
-                    self.node.get_logger().info("Arousal state > 0.5, CONTINUING stroke")
-                    return 'GO HOME'
-                else:
-                    self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
+                # if self.node.arousal_state > 0.5: # person has elevated heartrate
+                #     # slow down speed of robot until arousal_state >= 0.5
+                #     # adjust_speed_based_on_arousal(self.node.arousal_state)
+                #     self.node.get_logger().info("Arousal state > 0.5, CONTINUING stroke")
+                #     return 'GO HOME'
+                # else:
+                #     self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
 
                 # basically just execute the stroke?
                 self.go_to_cartesian_pose()
@@ -377,10 +377,31 @@ class PlanState():
             position = pose.position
             orientation = pose.orientation
             # ------
+
+            self.node.get_logger().info("original: x %f, y %f, z %f" % (position.x, position.y, position.z))
+
+            # cofrida transforms
             x,y,z = position.y, position.x, position.z # i changed x and y index 0 1
-            x,y,z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
+            cofrida_x, cofrida_y, cofrida_z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
+            self.node.get_logger().info("cofrida transforms: x %f, y %f, z %f" % (cofrida_x, cofrida_y, cofrida_z))
+
+            # vertical transforms
+            x = -cofrida_y
+            z = cofrida_z
+            y = -cofrida_x
+
+            self.node.get_logger().info("vertical transforms: x %f, y %f, z %f" % (x, y, z))
+
+            # translate canvas
+            # "CANVAS_POSITION":[-0.528, 0.0], and CANVAS WIDTH AND HEIGHT TODO: add as parameters
+            # x = x - (-0.528)*1000
+            # x = x - (0.2794*1000)/2.0
+            # y = y - (-0.0)*1000
+            # y = y - (-0.2794*1000)/2.0
+
+
             # q = orientations[i]
-            self.node.get_logger().info("going to position x %f, y %f" % (x, y))
+            self.node.get_logger().info("finished transforms: x %f, y %f, z %f" % (x, y, z))
 
 
             # euler= self.euler_from_quaternion(orientation.x, orientation.y, orientation.z, orientation.w) #quaternion.as_quat_array(orientations[i])
