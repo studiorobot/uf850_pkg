@@ -14,6 +14,7 @@ from ament_index_python.packages import get_package_share_directory
 import os
 from xarm.wrapper import XArmAPI
 from std_msgs.msg import String, Float32
+from framepose_msg.msg import FramePose
 import math
 
 ##########################################################
@@ -93,7 +94,7 @@ class GoHomeState():
         self.node.arm.set_state(state=0)
         time.sleep(1)
         if to_canvas:
-            self.node.arm.set_position(*[0.0, 0.0, 150, 180, 0, 0], wait=True)
+            self.node.arm.set_position(*[-250.0, 0.0, 150, 180, 0, 0], wait=True)
         else:
             self.node.arm.set_position(*[160.0, 160.0, 340.0, 180, 0, 0], wait=True)
         
@@ -261,24 +262,26 @@ class PlanState():
         self.next_state = None
         self.timeout_duration = 10.0  # Timeout in seconds for inactivity
         self.last_activity = time.time()
+        self.stop = False
         self.pause = False
-    
-    def adjust_speed_based_on_arousal(self, arousal):
-        """Adjust the robot's speed based on the arousal level."""
-        # Scaling factor for speed
-        if arousal > 0.5:
-            # Slow down the robot's speed when arousal is high
-            linear_speed = 10  # Lower speed when arousal is high
-            angular_speed = 5  # Lower angular speed
-        else:
-            # Normal speed when arousal is low
-            linear_speed = 25  # Default speed
-            angular_speed = 10  # Default angular speed
 
-        # Apply the adjusted speed to the robot's movement commands
-        self.node.linear_speed = linear_speed
-        self.node.angular_speed = angular_speed
-        self.node.get_logger().info(f"Speed adjusted based on arousal: Linear Speed = {linear_speed}, Angular Speed = {angular_speed}")
+    
+    # def adjust_speed_based_on_arousal(self, arousal):
+    #     """Adjust the robot's speed based on the arousal level."""
+    #     # Scaling factor for speed
+    #     if arousal > 0.5:
+    #         # Slow down the robot's speed when arousal is high
+    #         linear_speed = 10  # Lower speed when arousal is high
+    #         angular_speed = 5  # Lower angular speed
+    #     else:
+    #         # Normal speed when arousal is low
+    #         linear_speed = 25  # Default speed
+    #         angular_speed = 10  # Default angular speed
+
+    #     # Apply the adjusted speed to the robot's movement commands
+    #     self.node.linear_speed = linear_speed
+    #     self.node.angular_speed = angular_speed
+    #     self.node.get_logger().info(f"Speed adjusted based on arousal: Linear Speed = {linear_speed}, Angular Speed = {angular_speed}")
     
     def execute(self):
         self.next_state = None
@@ -289,29 +292,32 @@ class PlanState():
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
             # Switch to canvas frame
-            self.node.switch_frame(to_canvas=True)
-            self.node.is_already_in_canvas_frame = True
+            # self.node.switch_frame(to_canvas=True)
+            # self.node.is_already_in_canvas_frame = True
 
             # TODO: modify this section!!
             self.node.get_logger().info("hello there")
-            if self.node.is_already_in_canvas_frame:
+            self.go_to_cartesian_pose()
+            self.node.get_logger().info("finished cartesian pose")
+            self.next_state = "IDLE" #after finished stroke, return to idle state
+            # if self.node.is_already_in_canvas_frame:
 
-                # if self.node.arousal_state > 0.5: # person has elevated heartrate
-                #     # slow down speed of robot until arousal_state >= 0.5
-                #     # adjust_speed_based_on_arousal(self.node.arousal_state)
-                #     self.node.get_logger().info("Arousal state > 0.5, CONTINUING stroke")
-                #     return 'GO HOME'
-                # else:
-                #     self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
+            #     # if self.node.arousal_state > 0.5: # person has elevated heartrate
+            #     #     # slow down speed of robot until arousal_state >= 0.5
+            #     #     # adjust_speed_based_on_arousal(self.node.arousal_state)
+            #     #     self.node.get_logger().info("Arousal state > 0.5, CONTINUING stroke")
+            #     #     return 'GO HOME'
+            #     # else:
+            #     #     self.node.get_logger().info("Arousal state = 1, CONTINUING stroke")
 
-                # basically just execute the stroke?
-                self.go_to_cartesian_pose()
+            #     # basically just execute the stroke?
+            #     self.go_to_cartesian_pose()
 
-                self.node.get_logger().info("finished cartesian pose")
-                self.next_state = "GO HOME" #after finished stroke, return to idle state
+            #     self.node.get_logger().info("finished cartesian pose")
+            #     self.next_state = "GO HOME" #after finished stroke, return to idle state
         
-            else:
-                self.node.get_logger().info("PLAN STATE - ERROR: robot is not in palette frame!")
+            # else:
+            #     self.node.get_logger().info("PLAN STATE - ERROR: robot is not in palette frame!")
             # Check for inactivity timeout
             if time.time() - self.last_activity > self.timeout_duration:
                 self.node.get_logger().info("No input detected, transitioning to IDLE")
@@ -328,8 +334,14 @@ class PlanState():
         elif msg.data == 'ChangePaint':
             self.node.requested_state = 'CHANGE PAINT'
         elif msg.data == 'stop':
-            self.node.get_logger().info("set pause to be ture")
+            self.node.get_logger().info("set stop to be true")
+            self.stop = True
+            self.node.requested_state = 'GO HOME'
+        elif msg.data == 'pause':
+            self.node.get_logger().info("set pause to be true")
             self.pause = True
+        elif msg.data == 'start':
+            self.pause = False
 
     
     def go_to_cartesian_pose(self): #self, positions, orientations, speed=50
@@ -343,36 +355,36 @@ class PlanState():
         #     positions = positions[None,:]
         #     orientations = orientations[None,:]
         self.node.get_logger().info("starting paint strokes")
-        for pose in self.node.next_stroke:
+        prev_frame = self.node.next_stroke[0]
+        for i in range(len(self.node.next_stroke)):
+            pose = self.node.next_stroke[i]
+            frame = self.node.stroke_frames[i]
             self.node.stroke_count += 1
             rclpy.spin_once(self.node, timeout_sec=0.1)
 
-            if self.pause == True:
+            if self.stop:
                 self.node.get_logger().info("stop command received")
-                self.pause = False
+                self.stop = False
                 self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-                break
-        
-            # # self.node.get_logger().info("current depth is : %f" % (self.node.depth))
-            # # if self.node.depth <= self.node.initial_depth: # person in canvas
-            # #     self.node.get_logger().info("Canvas Occupied, SKIP stroke: %f" % (self.node.initial_depth))
-            # #     break
+                return
+            if self.pause == True:
+                self.node.get_logger().info("pause command received")
 
-            # # vx, vy, vz = 200 * (1 - self.node.arousal_state) # m/s
-            # # wx, wy, wz = 180 * (1 - self.node.arousal_state) # deg/s
-            # # self.node.arm.vc_set_cartesian_velocity([vx, vy, vz, wx, wy, wz])
-
-            # self.node.arm.vc_set_cartesian_velocity([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-
-            # # if self.node.arousal_state > 0.5: # person has elevated heartrate
-            # #     #TODO: get waypoints from motion planner and go farther from arm position
-            # #     # random chance to continue or not? im not sure
-            # #     # if np.random.rand() > 0.95: # TODO: Change this threshold to be in the options.json as a parameter!
-            # #         # currently always goes home when arousal state = 1
-            # #     self.node.get_logger().info("Arousal state > 0.5, SKIP stroke")
-            # #     break
-            # # else:
-            # #     self.node.get_logger().info("Arousal state < 0.5,  CONTINUING stroke")
+                # send robot to home position
+                self.node.arm.set_mode(0)
+                self.node.arm.set_state(state=0)
+                if self.node.is_already_in_canvas_frame:
+                    self.node.arm.set_position(*[-250.0, 0.0, 150, 180, 0, 0], wait=True) # TODO: MAKE GLOBAL VAR
+                else:
+                    self.node.arm.set_position(*[160.0, 160.0, 340.0, 180, 0, 0], wait=True)
+                
+                # wait until start
+                while self.pause:
+                    self.node.get_logger().info("waiting for start")
+                    rclpy.spin_once(self.node, timeout_sec=0.1)
+                    time.sleep(0.1)
+                self.pause = False
+                continue
             
             position = pose.position
             orientation = pose.orientation
@@ -385,24 +397,25 @@ class PlanState():
             cofrida_x, cofrida_y, cofrida_z = x*1000, y*-1000, z*1000 #m to mm # I changed y to multiple by 1000 instead of -1000
             self.node.get_logger().info("cofrida transforms: x %f, y %f, z %f" % (cofrida_x, cofrida_y, cofrida_z))
 
-            # vertical transforms
-            x = -cofrida_y
-            z = cofrida_z
-            y = -cofrida_x
-
-            self.node.get_logger().info("vertical transforms: x %f, y %f, z %f" % (x, y, z))
-
-            # translate canvas
-            # "CANVAS_POSITION":[-0.528, 0.0], and CANVAS WIDTH AND HEIGHT TODO: add as parameters
-            # x = x - (-0.528)*1000
-            # x = x - (0.2794*1000)/2.0
-            # y = y - (-0.0)*1000
-            # y = y - (-0.2794*1000)/2.0
-
-
-            # q = orientations[i]
-            self.node.get_logger().info("finished transforms: x %f, y %f, z %f" % (x, y, z))
-
+            if frame == 0: #make flat frame
+                # Switch to canvas frame
+                if self.node.is_already_in_canvas_frame:
+                    self.node.get_logger().info("turning flat frame")
+                    self.node.switch_frame(to_canvas=False)
+                    self.node.is_already_in_canvas_frame = False
+                x = cofrida_x
+                y = cofrida_y
+                z = cofrida_z # TODO: make a parameter!!
+            else: #make vertical frame
+                if not self.node.is_already_in_canvas_frame:
+                    self.node.get_logger().info("turning vertical frame")
+                    self.node.switch_frame(to_canvas=True)
+                    self.node.is_already_in_canvas_frame = True
+                # vertical transforms
+                x = -cofrida_y
+                z = cofrida_z
+                y = -cofrida_x
+                self.node.get_logger().info("vertical transforms: x %f, y %f, z %f" % (x, y, z))
 
             # euler= self.euler_from_quaternion(orientation.x, orientation.y, orientation.z, orientation.w) #quaternion.as_quat_array(orientations[i])
             roll, pitch, yaw = 180, 0, 0 #euler[0], euler[1], euler[2]
@@ -430,7 +443,15 @@ class PlanState():
 
             try:
                 # self.node.get_logger().info("try")
-                speed = 100*(1 - self.node.arousal_state) # TODO: make parameter for max speed
+                speed = 100
+                if frame == 1 and frame == prev_frame:
+                    if self.node.arousal_state > 0.9:
+                        speed = 10
+                    elif self.node.arousal_state < 0.1:
+                        speed = 100
+                    else:
+                        speed = 100*(1 - self.node.arousal_state) # TODO: make parameter for max speed
+
                 self.node.get_logger().info("speed and arousal num %f, %f" % (speed, self.node.arousal_state))
                 r = self.node.arm.set_position(*[x, y, z, roll, pitch, yaw], speed=speed, wait=wait)
 
@@ -456,6 +477,7 @@ class PlanState():
             except Exception as e:
                 self.good_morning_robot()
                 print('Cannot go to position', e)
+            prev_frame = frame
 
     def good_morning_robot(self):
         # self.node.arm.set_tcp_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
@@ -468,13 +490,6 @@ class PlanState():
         self.node.arm.set_state(state=0)
 
         self.node.arm.reset(wait=True)
-
-
-    # def good_night_robot(self):
-    #     self.node.arm.set_tcp_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    #     self.node.arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
-    #     self.node.arm.disconnect()
-
 
 class RefreshPaintState():
     """
@@ -496,20 +511,20 @@ class RefreshPaintState():
 
         change_color = False
         #Water location
-        if self.node.stroke_count == 0: #assumes that when strokes are over, you are changing color (FIX)
-            change_color = True
-            pass #Go to rag location
+        # if self.node.stroke_count == 0: #assumes that when strokes are over, you are changing color (FIX)
+        #     change_color = True
+        #     pass #Go to rag location
 
-        #Rag location
-        if change_color: #after dipping in water, go to rag
-            # self.next_state = "PAINTING" #continue painting
-            change_color = False
+        # #Rag location
+        # if change_color: #after dipping in water, go to rag
+        #     # self.next_state = "PAINTING" #continue painting
+        #     change_color = False
 
-        #Paint location
-        if self.node.stroke_count == 5: #TODO: set arbitrary number of strokes when should get paint again (TEST)
-            self.node.stroke_count = 0
-            pass #Go to paint pallete location
-        
+        # #Paint location
+        # if self.node.stroke_count == 5: #TODO: set arbitrary number of strokes when should get paint again (TEST)
+        #     self.node.stroke_count = 0
+        #     pass #Go to paint pallete location
+
         self.next_state = "GO HOME"
 
         while rclpy.ok() and self.next_state is None and not self.node.requested_state:
@@ -551,7 +566,7 @@ class StateMachineNode(Node):
         self.depth = 100.0 # Track next requested stroke
 
         # Create a subscription for CoFRIDA
-        self.cofrida_sub = self.create_subscription(PoseArray, "/frida_stroke_vec", self.cofrida_callback, 10)
+        self.cofrida_sub = self.create_subscription(FramePose, "/frida_stroke_vec", self.cofrida_callback, 10)
 
         #Create a subscription for MoveIt2 motion planner
         # self.moveit_sub = self.create_subscription(Pose, )
@@ -580,6 +595,7 @@ class StateMachineNode(Node):
         self._eef_state = None
 
     def switch_frame(self, to_canvas):
+        self.get_logger().info("SWITCH FRAME CALLED %d" % (to_canvas))
         self.arm.set_mode(0)
         self.arm.set_state(state=0)
         time.sleep(0.1)
@@ -854,10 +870,12 @@ class StateMachineNode(Node):
         self.get_logger().info(f'Depth received: {msg.data}', throttle_duration_sec=2)
         self.depth = msg.data
 
-    def cofrida_callback(self, msg: PoseArray):
+    def cofrida_callback(self, msg: FramePose):
         # given the pose array of a stroke (consisting of a few waypoints), execute those waypoints in canvas frame then return to the idle state
         # self.requested_state = 'PAINTING'   # move to canvas frame
-        self.next_stroke = msg.poses        # put requested stroke in next_stroke for planning state to use
+        self.next_stroke = msg.poses.poses        # put requested stroke in next_stroke for planning state to use
+        print("LENGTH OF POSES ", len(msg.poses.poses))
+        self.stroke_frames = msg.frame      # array of 0 and 1, where 0 = flat frame, 1 = vertical canvas frame
         self.requested_state = 'PLAN'       # go to planning state
         
 

@@ -21,7 +21,7 @@ try:
 
     input("Remove the brush from robot [ENTER]")
     print()
-    arm.set_tcp_offset([0.0, 0.0, 78.78, 0.0, 0.0, 0.0])
+    arm.set_tcp_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     arm.set_world_offset([0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
     time.sleep(0.1)
 
